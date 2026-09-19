@@ -1,0 +1,522 @@
+import { useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import { useAuth } from "../contexts/AuthContext";
+
+export const COURSES_CATALOG = [
+  {
+    id: "ai-essentials",
+    title: "AI Essentials & Automation",
+    category: "Tech & Digital Skills",
+    badge: "TECHNOLOGY",
+    badgeClass: "pill-tech",
+    level: "Beginner → Intermediate",
+    duration: "6h 40m",
+    modulesCount: 12,
+    rating: 4.9,
+    reviewsCount: "2.5k",
+    students: 2540,
+    image: "https://images.unsplash.com/photo-1677442136019-21780ecad995?w=600&auto=format&fit=crop&q=80",
+    description: "Learn how AI works and how to use modern AI tools to automate tasks and workflows."
+  },
+  {
+    id: "computer-basics",
+    title: "Introduction to Computer & Basic Computing",
+    category: "Tech & Digital Skills",
+    badge: "TECHNOLOGY",
+    badgeClass: "pill-tech",
+    level: "Beginner",
+    duration: "6h 30m",
+    modulesCount: 8,
+    rating: 4.8,
+    reviewsCount: "1.2k",
+    students: 1820,
+    image: "https://images.unsplash.com/photo-1517694712202-14dd9538aa97?w=600&auto=format&fit=crop&q=80",
+    description: "Master everyday computer literacy, operating systems, file organization, and essential software."
+  },
+  {
+    id: "photography",
+    title: "Photography Fundamentals & Lighting",
+    category: "Tech & Digital Skills",
+    badge: "CREATIVE",
+    badgeClass: "pill-creative",
+    level: "Beginner",
+    duration: "6h 20m",
+    modulesCount: 8,
+    rating: 4.7,
+    reviewsCount: "1.1k",
+    students: 1140,
+    image: "https://images.unsplash.com/photo-1516035069371-29a1b244cc32?w=600&auto=format&fit=crop&q=80",
+    description: "Camera mechanics, composition guidelines, exposure triangles, and studio lighting techniques."
+  },
+  {
+    id: "videography",
+    title: "Videography & Video Editing Mastery",
+    category: "Tech & Digital Skills",
+    badge: "CREATIVE",
+    badgeClass: "pill-creative",
+    level: "Intermediate",
+    duration: "10h 20m",
+    modulesCount: 12,
+    rating: 4.8,
+    reviewsCount: "1.6k",
+    students: 1980,
+    image: "https://images.unsplash.com/photo-1574717024653-61fd2cf4d44d?w=600&auto=format&fit=crop&q=80",
+    description: "Professional video capture, Premiere Pro & DaVinci workflows, color grading, and cinematic storytelling."
+  },
+  {
+    id: "sound-production",
+    title: "Sound Production & Audio Engineering",
+    category: "Tech & Digital Skills",
+    badge: "AUDIO",
+    badgeClass: "pill-audio",
+    level: "Beginner",
+    duration: "6h 15m",
+    modulesCount: 10,
+    rating: 4.8,
+    reviewsCount: "890",
+    students: 920,
+    image: "https://images.unsplash.com/photo-1598488035139-bdbb2231ce04?w=600&auto=format&fit=crop&q=80",
+    description: "Studio microphones, DAW audio editing, mixing, mastering, and sound acoustics fundamentals."
+  },
+  {
+    id: "graphic-design",
+    title: "Graphic Design Fundamentals & Figma",
+    category: "Tech & Digital Skills",
+    badge: "DESIGN",
+    badgeClass: "pill-design",
+    level: "Beginner",
+    duration: "8h 30m",
+    modulesCount: 12,
+    rating: 4.9,
+    reviewsCount: "2.1k",
+    students: 2300,
+    image: "https://images.unsplash.com/photo-1626785774573-4b799315345d?w=600&auto=format&fit=crop&q=80",
+    description: "Color theory, typography hierarchy, branding identity, and modern digital UI illustration."
+  },
+  {
+    id: "social-media",
+    title: "Social Media Strategy & Content Growth",
+    category: "Tech & Digital Skills",
+    badge: "MARKETING",
+    badgeClass: "pill-marketing",
+    level: "Beginner",
+    duration: "7h 40m",
+    modulesCount: 10,
+    rating: 4.7,
+    reviewsCount: "1.4k",
+    students: 1540,
+    image: "https://images.unsplash.com/photo-1611162617474-5b21e879e113?w=600&auto=format&fit=crop&q=80",
+    description: "Audience growth strategies, organic viral video distribution, copywriting, and brand partnerships."
+  },
+  {
+    id: "livestreaming",
+    title: "Live Streaming & Broadcast Production",
+    category: "Tech & Digital Skills",
+    badge: "LIVE",
+    badgeClass: "pill-tech",
+    level: "Beginner",
+    duration: "6h 10m",
+    modulesCount: 8,
+    rating: 4.8,
+    reviewsCount: "760",
+    students: 840,
+    image: "https://images.unsplash.com/photo-1542751371-adc38448a05e?w=600&auto=format&fit=crop&q=80",
+    description: "OBS Studio setup, multi-camera switching, audio sync, and interactive audience management."
+  },
+  {
+    id: "broadcasting",
+    title: "Professional Media Broadcasting & Presenting",
+    category: "Professional Skills",
+    badge: "MEDIA",
+    badgeClass: "pill-marketing",
+    level: "Intermediate",
+    duration: "8h 00m",
+    modulesCount: 10,
+    rating: 4.8,
+    reviewsCount: "640",
+    students: 690,
+    image: "https://images.unsplash.com/photo-1589903308904-1010c2294adc?w=600&auto=format&fit=crop&q=80",
+    description: "On-camera articulation, broadcast journalism ethics, voice modulation, and interview moderation."
+  },
+  {
+    id: "project-management",
+    title: "Applied Agile Project Management",
+    category: "Professional Skills",
+    badge: "BUSINESS",
+    badgeClass: "pill-business",
+    level: "Beginner",
+    duration: "9h 30m",
+    modulesCount: 10,
+    rating: 4.9,
+    reviewsCount: "1.8k",
+    students: 2150,
+    image: "https://images.unsplash.com/photo-1454165804606-c3d57bc86b40?w=600&auto=format&fit=crop&q=80",
+    description: "Agile methodologies, sprint cycles, stakeholder management, and project execution frameworks."
+  }
+];
+
+export default function Home() {
+  const { currentUser } = useAuth();
+  const navigate = useNavigate();
+  const [activeFilter, setActiveFilter] = useState("All");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [showPreviewMockup, setShowPreviewMockup] = useState(true);
+  const [showHowItWorksModal, setShowHowItWorksModal] = useState(false);
+
+  const filteredCourses = COURSES_CATALOG.filter(course => {
+    const matchesFilter = activeFilter === "All" || course.category === activeFilter;
+    const matchesSearch =
+      course.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      course.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      course.badge.toLowerCase().includes(searchQuery.toLowerCase());
+    return matchesFilter && matchesSearch;
+  });
+
+  return (
+    <div className="app-container">
+      {/* ── Hero Section (Screen 1) ─────────────────────────────────── */}
+      <section className="landing-hero">
+        <div className={`hero-content-grid ${!currentUser ? "hero-grid-visitor" : ""}`}>
+          {/* Left Hero Column */}
+          <div>
+            <h1 className="hero-headline">
+              Learn practical skills.<br />Build your future.
+            </h1>
+            <p className="hero-subtext">
+              Professional courses designed to help you develop relevant, practical skills through online learning and hands-on training.
+            </p>
+            <div className="hero-cta-row">
+              <button
+                className="btn btn-solid-dark btn-lg"
+                id="hero-explore-btn"
+                onClick={() => {
+                  const catalog = document.getElementById("courses-catalog-section");
+                  if (catalog) catalog.scrollIntoView({ behavior: "smooth" });
+                }}
+              >
+                Explore Courses &rarr;
+              </button>
+              <button
+                className="btn btn-outline btn-lg"
+                id="hero-how-it-works-btn"
+                onClick={() => setShowHowItWorksModal(true)}
+              >
+                How it works
+              </button>
+            </div>
+          </div>
+
+          {/* Right Hero Column: Floating Dashboard Preview Card (Only visible when logged in) */}
+          {currentUser && showPreviewMockup && (
+            <div className="hero-floating-mockup">
+              <div className="mockup-inner-header">
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: "1.1rem", color: "var(--text-primary)" }}>
+                    Good morning, {currentUser.displayName?.split(" ")[0] || "Learner"} &#128075;
+                  </div>
+                  <div style={{ fontSize: "0.85rem", color: "var(--text-muted)" }}>
+                    Ready to continue learning?
+                  </div>
+                </div>
+                <button
+                  className="btn-ghost"
+                  style={{ fontSize: "1rem", color: "var(--text-muted)", cursor: "pointer", width: 28, height: 28, display: "flex", alignItems: "center", justifyContent: "center", borderRadius: "50%" }}
+                  onClick={() => setShowPreviewMockup(false)}
+                  title="Dismiss preview"
+                  aria-label="Dismiss preview"
+                >
+                  &#10005;
+                </button>
+              </div>
+
+              <div style={{ fontSize: "0.775rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--text-muted)", marginBottom: 10 }}>
+                Continue Learning
+              </div>
+
+              <div className="mockup-continue-card">
+                <div className="mockup-course-thumb">
+                  AI
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 700, fontSize: "0.95rem", color: "var(--text-primary)", marginBottom: 2 }}>
+                    AI Essentials &amp; Automation
+                  </div>
+                  <div style={{ fontSize: "0.8rem", color: "var(--text-muted)", marginBottom: 8 }}>
+                    Module 4 of 10
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <div style={{ flex: 1, height: 6, background: "#E2E8F0", borderRadius: 99, overflow: "hidden" }}>
+                      <div style={{ width: "64%", height: "100%", background: "var(--primary-learner)", borderRadius: 99 }} />
+                    </div>
+                    <span style={{ fontSize: "0.775rem", fontWeight: 700, color: "var(--text-secondary)" }}>
+                      64%
+                    </span>
+                  </div>
+                </div>
+                <button
+                  className="btn btn-solid-dark btn-sm"
+                  onClick={() => navigate("/course/ai-essentials")}
+                >
+                  Continue &rarr;
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      </section>
+
+      {/* ── Category Overview ("Explore what you can learn") ─────────── */}
+      <section className="category-overview-section" id="skills-overview">
+        <div className="section-title-row">
+          <div>
+            <h2 style={{ fontSize: "1.75rem", fontWeight: 800, marginBottom: 4 }}>
+              Explore what you can learn
+            </h2>
+            <p style={{ color: "var(--text-secondary)", fontSize: "0.95rem" }}>
+              Gain in-demand skills with our carefully curated courses.
+            </p>
+          </div>
+          <button
+            className="btn btn-ghost"
+            style={{ fontWeight: 600, color: "var(--primary-learner)" }}
+            onClick={() => {
+              setActiveFilter("All");
+              document.getElementById("courses-catalog-section")?.scrollIntoView({ behavior: "smooth" });
+            }}
+          >
+            View all courses &rarr;
+          </button>
+        </div>
+
+        <div className="skills-deck-grid" id="learning-paths-section">
+          {/* Card 1: Tech & Digital Skills */}
+          <div className="skill-category-box">
+            <div className="skill-box-header">
+              <div className="skill-category-icon">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+                  <line x1="8" y1="21" x2="16" y2="21"></line>
+                  <line x1="12" y1="17" x2="12" y2="21"></line>
+                </svg>
+              </div>
+              <div>
+                <div style={{ fontWeight: 700, fontSize: "1.1rem" }}>Tech &amp; Digital Skills</div>
+                <div style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>8 courses available</div>
+              </div>
+            </div>
+            <div className="skill-tags-list">
+              <div className="skill-tag-item">Computer &amp; Basic Computing</div>
+              <div className="skill-tag-item">Sound Production</div>
+              <div className="skill-tag-item">AI Essentials / AI Automation</div>
+              <div className="skill-tag-item">Graphic Design</div>
+              <div className="skill-tag-item">Photography</div>
+              <div className="skill-tag-item">Social Media Management</div>
+              <div className="skill-tag-item">Videography &amp; Video Editing</div>
+              <div className="skill-tag-item">Livestreaming</div>
+            </div>
+          </div>
+
+          {/* Card 2: Professional Skills */}
+          <div className="skill-category-box">
+            <div className="skill-box-header">
+              <div className="skill-category-icon" style={{ background: "#EFF6FF", color: "#1D4ED8" }}>
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+                </svg>
+              </div>
+              <div>
+                <div style={{ fontWeight: 700, fontSize: "1.1rem" }}>Professional Skills</div>
+                <div style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>2 courses available</div>
+              </div>
+            </div>
+            <div className="skill-tags-list">
+              <div className="skill-tag-item">Broadcasting &amp; Media</div>
+              <div className="skill-tag-item">Project Management &amp; Agile</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ── Course Catalog Grid (Screen 2) ───────────────────────────── */}
+      <section className="catalog-section" id="courses-catalog-section">
+        <div className="catalog-header-bar">
+          <div>
+            <h2 style={{ fontSize: "1.85rem", fontWeight: 800, marginBottom: 4 }}>
+              Explore Courses
+            </h2>
+            <p style={{ color: "var(--text-secondary)", fontSize: "0.95rem" }}>
+              Find the right course to match your career goals.
+            </p>
+          </div>
+
+          <div style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
+            {/* Filter Pills */}
+            <div className="filter-pills-row">
+              {["All", "Tech & Digital Skills", "Professional Skills"].map(category => (
+                <button
+                  key={category}
+                  className={`filter-pill-btn ${activeFilter === category ? "active" : ""}`}
+                  onClick={() => setActiveFilter(category)}
+                >
+                  {category}
+                </button>
+              ))}
+            </div>
+
+            {/* Search Input */}
+            <div className="search-input-field" style={{ position: "relative" }}>
+              <span>&#128269;</span>
+              <input
+                id="catalog-search-input"
+                type="text"
+                placeholder="Search courses, skills or instructors..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery("")}
+                  style={{
+                    position: "absolute",
+                    right: 12,
+                    top: "50%",
+                    transform: "translateY(-50%)",
+                    background: "none",
+                    border: "none",
+                    color: "var(--text-muted)",
+                    cursor: "pointer",
+                    fontSize: "0.85rem",
+                    padding: 4
+                  }}
+                  title="Clear search"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Courses Grid */}
+        <div className="courses-card-grid">
+          {filteredCourses.map(course => (
+            <div key={course.id} className="course-card-item">
+              <div className="course-card-thumb-wrap">
+                <img
+                  src={course.image}
+                  alt={course.title}
+                  loading="lazy"
+                  onError={(e) => {
+                    e.target.style.display = 'none';
+                    e.target.nextSibling.style.display = 'flex';
+                  }}
+                />
+                <div className="course-card-thumb-placeholder" style={{ display: 'none' }}>
+                  {course.badge}
+                </div>
+              </div>
+
+              <div className="course-card-body">
+                <div className="course-card-meta-top">
+                  <span className={`pill-badge ${course.badgeClass}`}>
+                    {course.badge}
+                  </span>
+                  <div className="star-rating-box">
+                    <span>★</span>
+                    {course.rating} ({course.reviewsCount})
+                  </div>
+                </div>
+
+                <h3 className="course-card-title">
+                  {course.title}
+                </h3>
+
+                <div className="course-card-specs">
+                  {course.level} &bull; {course.duration} &bull; {course.modulesCount} Modules
+                </div>
+
+                <div className="course-card-footer">
+                  <span style={{ fontSize: "0.85rem", fontWeight: 700, color: "var(--text-primary)" }}>
+                    {course.students.toLocaleString()} enrolled
+                  </span>
+                  <Link
+                    to={`/course/${course.id}`}
+                    className="btn btn-outline btn-sm"
+                    style={{ fontWeight: 600 }}
+                  >
+                    View Course &rarr;
+                  </Link>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* ── Footer ─────────────────────────────────────────────────── */}
+      <footer style={{ background: "#FFFFFF", borderTop: "1px solid var(--border-light)", padding: "32px 40px", marginTop: "auto" }}>
+        <div style={{ maxWidth: 1280, margin: "0 auto", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 16 }}>
+          <div className="brand-wrapper" style={{ fontSize: "1.1rem" }}>
+            <div className="brand-logo-icon" style={{ width: 26, height: 26, fontSize: "0.85rem" }}>P</div>
+            <span>Peleekings</span>
+          </div>
+          <div style={{ fontSize: "0.85rem", color: "var(--text-muted)" }}>
+            &copy; {new Date().getFullYear()} Peleekings Inc. Learn &bull; Practice &bull; Prove &bull; Progress
+          </div>
+        </div>
+      </footer>
+
+      {/* ── How It Works Modal Dialog ───────────────────────────────── */}
+      {showHowItWorksModal && (
+        <div className="modal-backdrop-overlay" onClick={() => setShowHowItWorksModal(false)}>
+          <div className="modal-dialog-box" onClick={e => e.stopPropagation()}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+              <div>
+                <span className="pill-badge pill-tech" style={{ marginBottom: 6 }}>HOW IT WORKS</span>
+                <h3 style={{ fontSize: "1.45rem", fontWeight: 800 }}>Mastering Skills on Peleekings</h3>
+              </div>
+              <button
+                className="btn-ghost"
+                onClick={() => setShowHowItWorksModal(false)}
+                style={{ fontSize: "1.2rem", cursor: "pointer" }}
+              >
+                ✕
+              </button>
+            </div>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: 20, margin: "20px 0 28px" }}>
+              {[
+                { step: "01", title: "Select Your Learning Experience", desc: "Choose between 100% self-paced Online Classes or hands-on Instructor-Led Workshops with physical studio sessions." },
+                { step: "02", title: "Complete Structured Modular Lessons", desc: "Follow bite-sized video curriculum, download lecture notes, take unit quizzes, and build real portfolio projects." },
+                { step: "03", title: "Verify Credentials & Advance", desc: "Pass assessments, receive your official verified Certificate of Completion, and leverage your NYSC code for career opportunities." },
+              ].map(item => (
+                <div key={item.step} style={{ display: "flex", gap: 16, alignItems: "flex-start" }}>
+                  <div style={{ width: 42, height: 42, borderRadius: "50%", background: "#F1F5F9", color: "var(--primary-learner)", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: "1rem", flexShrink: 0 }}>
+                    {item.step}
+                  </div>
+                  <div>
+                    <h4 style={{ fontSize: "1.05rem", fontWeight: 700, marginBottom: 4 }}>{item.title}</h4>
+                    <p style={{ fontSize: "0.875rem", color: "var(--text-secondary)", lineHeight: 1.5 }}>{item.desc}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 12 }}>
+              <button
+                className="btn btn-solid-dark"
+                onClick={() => {
+                  setShowHowItWorksModal(false);
+                  document.getElementById("courses-catalog-section")?.scrollIntoView({ behavior: "smooth" });
+                }}
+              >
+                Explore Courses Now &rarr;
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
