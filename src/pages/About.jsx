@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { submitUserMilestone } from "../contexts/userActivity";
@@ -6,6 +6,11 @@ import { submitUserMilestone } from "../contexts/userActivity";
 export default function About() {
   const { currentUser, userProfile } = useAuth();
   const navigate = useNavigate();
+
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: "instant" });
+  }, []);
+
   const [showMilestoneModal, setShowMilestoneModal] = useState(false);
   const [milestoneType, setMilestoneType] = useState("Passing Out Parade (POP)");
   const [fullName, setFullName] = useState(userProfile?.fullName || currentUser?.displayName || "");
