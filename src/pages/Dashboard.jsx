@@ -142,7 +142,6 @@ export default function Dashboard() {
           {[
             { id: "dashboard", label: "Dashboard", icon: "📊" },
             { id: "my-courses", label: "My Courses", icon: "📚" },
-            { id: "explore", label: "Explore", icon: "🔍", action: () => navigate("/") },
             { id: "assignments", label: "Assignments", icon: "📝" },
             { id: "tests", label: "Tests", icon: "⏱" },
             { id: "notes", label: "Notes", icon: "📄" },

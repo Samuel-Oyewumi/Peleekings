@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
+import { COURSES_CATALOG } from "../pages/Home";
 
 export default function Navbar() {
   const { currentUser, userProfile, logout, updateUserRole } = useAuth();
@@ -12,6 +13,11 @@ export default function Navbar() {
   const [showNotifications, setShowNotifications] = useState(false);
   const [showResourcesModal, setShowResourcesModal] = useState(false);
   const [showMobileMenu, setShowMobileMenu] = useState(false);
+
+  // Active search modal state
+  const [showSearchModal, setShowSearchModal] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchCategory, setSearchCategory] = useState("All");
 
   // Notifications state with full messages
   const [notifications, setNotifications] = useState([
@@ -90,8 +96,38 @@ export default function Navbar() {
   }, [location.pathname]);
 
   const isLanding = location.pathname === "/";
-  // On the landing page, always present public visitor view (no Dashboard, no bell, no avatar)
+  const isDashboard = location.pathname === "/dashboard";
+  // On the landing page, always present public visitor view (no bell, no avatar)
   const showAuthUser = !isLanding && !!currentUser;
+
+  // Keyboard shortcut for active search modal (Ctrl+K / Cmd+K)
+  useEffect(() => {
+    function handleKeyDown(e) {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setShowSearchModal(prev => !prev);
+      }
+      if (e.key === "Escape") {
+        setShowSearchModal(false);
+      }
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
+
+  const filteredSearchCourses = COURSES_CATALOG.filter(course => {
+    const matchesCategory =
+      searchCategory === "All" ||
+      course.category === searchCategory ||
+      course.badge === searchCategory;
+    const q = searchQuery.toLowerCase().trim();
+    const matchesQuery =
+      !q ||
+      course.title.toLowerCase().includes(q) ||
+      course.description.toLowerCase().includes(q) ||
+      course.badge.toLowerCase().includes(q);
+    return matchesCategory && matchesQuery;
+  });
 
   const initials = (currentUser?.displayName || userProfile?.fullName || "BU")
     .split(" ")
@@ -122,107 +158,83 @@ export default function Navbar() {
         <span>Peleekings</span>
       </Link>
 
-      {/* ── Rearranged Navigation Links per User Request ──────────────
-          Order: Dashboard (when logged in) -> Courses -> Learning Paths -> Resources -> About
+      {/* ── Navigation Links ──────────────
+          Only shown on public pages (hidden on the user's login dashboard interface)
+          Order: Courses -> Learning Paths -> Resources -> About
       ────────────────────────────────────────────────────────────── */}
-      <nav className="nav-links-menu">
-        {/* 1. Dashboard (Only visible when user is logged in and not on public landing) */}
-        {showAuthUser && (
+      {!isDashboard && (
+        <nav className="nav-links-menu">
+          {/* 1. Courses */}
           <Link
-            to="/dashboard"
-            className={`nav-item-link ${isActive("/dashboard") ? "active" : ""}`}
-            id="nav-dashboard"
+            to="/"
+            className={`nav-item-link ${isActive("/") && activeSection === "courses" ? "active" : ""}`}
+            id="nav-courses"
+            onClick={() => {
+              setActiveSection("courses");
+              if (location.pathname === "/") {
+                const el = document.getElementById("courses-catalog-section");
+                if (el) el.scrollIntoView({ behavior: "smooth" });
+              }
+            }}
           >
-            Dashboard
+            Courses
           </Link>
-        )}
 
-        {/* 2. Courses */}
-        <Link
-          to="/"
-          className={`nav-item-link ${isActive("/") && activeSection === "courses" ? "active" : ""}`}
-          id="nav-courses"
-          onClick={() => {
-            setActiveSection("courses");
-            if (location.pathname === "/") {
-              const el = document.getElementById("courses-catalog-section");
-              if (el) el.scrollIntoView({ behavior: "smooth" });
-            }
-          }}
-        >
-          Courses
-        </Link>
-
-        {/* 3. Learning Paths */}
-        <Link
-          to="/"
-          className={`nav-item-link ${isActive("/") && activeSection === "learning-paths" ? "active" : ""}`}
-          id="nav-learning-paths"
-          onClick={(e) => {
-            setActiveSection("learning-paths");
-            if (location.pathname !== "/") {
-              navigate("/");
-              setTimeout(() => {
+          {/* 2. Learning Paths */}
+          <Link
+            to="/"
+            className={`nav-item-link ${isActive("/") && activeSection === "learning-paths" ? "active" : ""}`}
+            id="nav-learning-paths"
+            onClick={(e) => {
+              setActiveSection("learning-paths");
+              if (location.pathname !== "/") {
+                navigate("/");
+                setTimeout(() => {
+                  const el = document.getElementById("learning-paths-section");
+                  if (el) el.scrollIntoView({ behavior: "smooth" });
+                }, 120);
+              } else {
+                e.preventDefault();
                 const el = document.getElementById("learning-paths-section");
                 if (el) el.scrollIntoView({ behavior: "smooth" });
-              }, 120);
-            } else {
-              e.preventDefault();
-              const el = document.getElementById("learning-paths-section");
-              if (el) el.scrollIntoView({ behavior: "smooth" });
-            }
-          }}
-        >
-          Learning Paths
-        </Link>
+              }
+            }}
+          >
+            Learning Paths
+          </Link>
 
-        {/* 4. Resources (Before About) */}
-        <button
-          type="button"
-          className="nav-item-link"
-          id="nav-resources"
-          onClick={() => setShowResourcesModal(true)}
-          style={{ background: "none", border: "none", cursor: "pointer", font: "inherit" }}
-        >
-          Resources
-        </button>
+          {/* 3. Resources */}
+          <button
+            type="button"
+            className="nav-item-link"
+            id="nav-resources"
+            onClick={() => setShowResourcesModal(true)}
+            style={{ background: "none", border: "none", cursor: "pointer", font: "inherit" }}
+          >
+            Resources
+          </button>
 
-        {/* 5. About */}
-        <Link
-          to="/about"
-          className={`nav-item-link ${isActive("/about") ? "active" : ""}`}
-          id="nav-about"
-        >
-          About
-        </Link>
-      </nav>
+          {/* 4. About */}
+          <Link
+            to="/about"
+            className={`nav-item-link ${isActive("/about") ? "active" : ""}`}
+            id="nav-about"
+          >
+            About
+          </Link>
+        </nav>
+      )}
 
       {/* Right Actions */}
       <div className="nav-actions-group">
-        {/* Search button trigger */}
+        {/* Active Search Button Trigger */}
         <button
           className="btn-ghost"
           style={{ width: 38, height: 38, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}
-          onClick={() => {
-            if (location.pathname !== "/") {
-              navigate("/");
-              setTimeout(() => {
-                const searchInput = document.getElementById("catalog-search-input");
-                if (searchInput) {
-                  searchInput.focus();
-                  searchInput.scrollIntoView({ behavior: "smooth" });
-                }
-              }, 150);
-            } else {
-              const searchInput = document.getElementById("catalog-search-input");
-              if (searchInput) {
-                searchInput.focus();
-                searchInput.scrollIntoView({ behavior: "smooth" });
-              }
-            }
-          }}
-          title="Search courses"
+          onClick={() => setShowSearchModal(true)}
+          title="Search courses (Ctrl+K)"
           aria-label="Search courses"
+          id="nav-search-btn"
         >
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <circle cx="11" cy="11" r="8"></circle>
@@ -451,64 +463,71 @@ export default function Navbar() {
       {showMobileMenu && (
         <div className="mobile-nav-drawer">
           <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-            {showAuthUser && (
-              <Link
-                to="/dashboard"
-                className={`mobile-nav-link ${isActive("/dashboard") ? "active" : ""}`}
-                onClick={() => setShowMobileMenu(false)}
-              >
-                Dashboard
-              </Link>
-            )}
-            <Link
-              to="/"
-              className={`mobile-nav-link ${isActive("/") && activeSection === "courses" ? "active" : ""}`}
-              onClick={() => {
-                setShowMobileMenu(false);
-                setActiveSection("courses");
-                document.getElementById("courses-catalog-section")?.scrollIntoView({ behavior: "smooth" });
-              }}
-            >
-              Courses
-            </Link>
-            <Link
-              to="/"
-              className={`mobile-nav-link ${isActive("/") && activeSection === "learning-paths" ? "active" : ""}`}
-              onClick={(e) => {
-                setShowMobileMenu(false);
-                setActiveSection("learning-paths");
-                if (location.pathname !== "/") {
-                  navigate("/");
-                  setTimeout(() => {
-                    const el = document.getElementById("learning-paths-section");
-                    if (el) el.scrollIntoView({ behavior: "smooth" });
-                  }, 120);
-                } else {
-                  e.preventDefault();
-                  const el = document.getElementById("learning-paths-section");
-                  if (el) el.scrollIntoView({ behavior: "smooth" });
-                }
-              }}
-            >
-              Learning Paths
-            </Link>
+            {/* Search Trigger for Mobile */}
             <button
               className="mobile-nav-link"
-              style={{ textAlign: "left", background: "none", border: "none" }}
+              style={{ textAlign: "left", background: "none", border: "none", display: "flex", alignItems: "center", gap: 10, color: "var(--primary-learner)", fontWeight: 600 }}
               onClick={() => {
                 setShowMobileMenu(false);
-                setShowResourcesModal(true);
+                setShowSearchModal(true);
               }}
             >
-              Resources
+              <span>🔍</span> Search Courses
             </button>
-            <Link
-              to="/about"
-              className={`mobile-nav-link ${isActive("/about") ? "active" : ""}`}
-              onClick={() => setShowMobileMenu(false)}
-            >
-              About
-            </Link>
+
+            {!isDashboard && (
+              <>
+                <Link
+                  to="/"
+                  className={`mobile-nav-link ${isActive("/") && activeSection === "courses" ? "active" : ""}`}
+                  onClick={() => {
+                    setShowMobileMenu(false);
+                    setActiveSection("courses");
+                    document.getElementById("courses-catalog-section")?.scrollIntoView({ behavior: "smooth" });
+                  }}
+                >
+                  Courses
+                </Link>
+                <Link
+                  to="/"
+                  className={`mobile-nav-link ${isActive("/") && activeSection === "learning-paths" ? "active" : ""}`}
+                  onClick={(e) => {
+                    setShowMobileMenu(false);
+                    setActiveSection("learning-paths");
+                    if (location.pathname !== "/") {
+                      navigate("/");
+                      setTimeout(() => {
+                        const el = document.getElementById("learning-paths-section");
+                        if (el) el.scrollIntoView({ behavior: "smooth" });
+                      }, 120);
+                    } else {
+                      e.preventDefault();
+                      const el = document.getElementById("learning-paths-section");
+                      if (el) el.scrollIntoView({ behavior: "smooth" });
+                    }
+                  }}
+                >
+                  Learning Paths
+                </Link>
+                <button
+                  className="mobile-nav-link"
+                  style={{ textAlign: "left", background: "none", border: "none" }}
+                  onClick={() => {
+                    setShowMobileMenu(false);
+                    setShowResourcesModal(true);
+                  }}
+                >
+                  Resources
+                </button>
+                <Link
+                  to="/about"
+                  className={`mobile-nav-link ${isActive("/about") ? "active" : ""}`}
+                  onClick={() => setShowMobileMenu(false)}
+                >
+                  About
+                </Link>
+              </>
+            )}
 
             <div style={{ borderTop: "1px solid var(--border-light)", paddingTop: 16, display: "flex", flexDirection: "column", gap: 10 }}>
               {showAuthUser ? (
@@ -638,6 +657,137 @@ export default function Navbar() {
                 </button>
               )}
               <button className="btn btn-outline btn-sm" onClick={() => setSelectedNotification(null)}>
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Active Search Modal Dialog (Ctrl+K) ───────────────────── */}
+      {showSearchModal && (
+        <div className="modal-backdrop-overlay" onClick={() => setShowSearchModal(false)}>
+          <div
+            className="modal-dialog-box"
+            style={{ maxWidth: 640, width: "92%", padding: "24px", maxHeight: "85vh", display: "flex", flexDirection: "column" }}
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Search Input Bar */}
+            <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 16px", background: "#F8FAFC", border: "1.5px solid var(--primary-learner)", borderRadius: "var(--radius-md)", marginBottom: 14 }}>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--primary-learner)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="11" cy="11" r="8"></circle>
+                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+              </svg>
+              <input
+                type="text"
+                autoFocus
+                placeholder="Search courses, skills, tools (e.g. AI, Figma, Video)..."
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                style={{ flex: 1, border: "none", background: "transparent", fontSize: "1rem", outline: "none", color: "var(--text-primary)" }}
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery("")}
+                  style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: "1.1rem", padding: "0 4px" }}
+                  title="Clear search"
+                >
+                  ✕
+                </button>
+              )}
+              <kbd style={{ fontSize: "0.72rem", background: "#E2E8F0", padding: "2px 6px", borderRadius: 4, color: "var(--text-muted)", fontWeight: 600 }}>ESC</kbd>
+            </div>
+
+            {/* Quick Category Filter Chips */}
+            <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 8, marginBottom: 12 }}>
+              {["All", "Tech & Digital Skills", "Professional Skills"].map(cat => (
+                <button
+                  key={cat}
+                  type="button"
+                  onClick={() => setSearchCategory(cat)}
+                  className={`btn btn-sm ${searchCategory === cat ? "btn-solid-dark" : "btn-outline"}`}
+                  style={{ fontSize: "0.78rem", padding: "4px 12px", borderRadius: "99px", whiteSpace: "nowrap" }}
+                >
+                  {cat}
+                </button>
+              ))}
+            </div>
+
+            {/* Results List */}
+            <div style={{ overflowY: "auto", flex: 1, display: "flex", flexDirection: "column", gap: 10, paddingRight: 4, minHeight: 180 }}>
+              {filteredSearchCourses.length > 0 ? (
+                filteredSearchCourses.map(course => (
+                  <div
+                    key={course.id}
+                    onClick={() => {
+                      setShowSearchModal(false);
+                      navigate(`/course/${course.id}`);
+                    }}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 14,
+                      padding: "10px 14px",
+                      border: "1px solid var(--border-light)",
+                      borderRadius: "var(--radius-sm)",
+                      cursor: "pointer",
+                      transition: "background 0.15s, border-color 0.15s",
+                      background: "#FFFFFF"
+                    }}
+                    onMouseEnter={e => {
+                      e.currentTarget.style.background = "#F8FAFC";
+                      e.currentTarget.style.borderColor = "var(--primary-learner)";
+                    }}
+                    onMouseLeave={e => {
+                      e.currentTarget.style.background = "#FFFFFF";
+                      e.currentTarget.style.borderColor = "var(--border-light)";
+                    }}
+                  >
+                    <img
+                      src={course.image}
+                      alt={course.title}
+                      style={{ width: 48, height: 48, borderRadius: 8, objectFit: "cover", flexShrink: 0 }}
+                    />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 2 }}>
+                        <span className={`pill-badge ${course.badgeClass || "pill-tech"}`} style={{ fontSize: "0.65rem", padding: "1px 6px" }}>
+                          {course.badge}
+                        </span>
+                        <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>★ {course.rating} • {course.duration}</span>
+                      </div>
+                      <div style={{ fontWeight: 700, fontSize: "0.925rem", color: "var(--text-primary)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                        {course.title}
+                      </div>
+                      <div style={{ fontSize: "0.8rem", color: "var(--text-muted)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                        {course.description}
+                      </div>
+                    </div>
+                    <span style={{ fontSize: "0.85rem", color: "var(--primary-learner)", fontWeight: 600, flexShrink: 0 }}>
+                      View &rarr;
+                    </span>
+                  </div>
+                ))
+              ) : (
+                <div style={{ padding: "36px 16px", textAlign: "center", color: "var(--text-muted)" }}>
+                  <div style={{ fontSize: "2rem", marginBottom: 8 }}>🔍</div>
+                  <div style={{ fontWeight: 600, fontSize: "1rem", color: "var(--text-primary)", marginBottom: 4 }}>
+                    No courses found
+                  </div>
+                  <div style={{ fontSize: "0.85rem" }}>
+                    No results for "{searchQuery}". Try searching for "AI", "Design", "Video", or "Broadcasting".
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Footer with Hint and Close Button */}
+            <div style={{ marginTop: 14, paddingTop: 12, borderTop: "1px solid var(--border-light)", display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "0.8rem", color: "var(--text-muted)" }}>
+              <span>Tip: Press <kbd style={{ background: "#E2E8F0", padding: "2px 5px", borderRadius: 3 }}>Ctrl</kbd> + <kbd style={{ background: "#E2E8F0", padding: "2px 5px", borderRadius: 3 }}>K</kbd> to open search anywhere</span>
+              <button
+                className="btn btn-outline btn-sm"
+                onClick={() => setShowSearchModal(false)}
+              >
                 Close
               </button>
             </div>
