@@ -271,8 +271,8 @@ export default function Navbar() {
                   setShowNotifications(false);
                 }}
               >
-                {activeUser?.photoURL ? (
-                  <img src={activeUser.photoURL} alt="Avatar" style={{ width: "100%", height: "100%", borderRadius: "50%", objectFit: "cover" }} />
+                {currentUser?.photoURL ? (
+                  <img src={currentUser.photoURL} alt="Avatar" style={{ width: "100%", height: "100%", borderRadius: "50%", objectFit: "cover" }} />
                 ) : (
                   initials
                 )}
