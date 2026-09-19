@@ -15,16 +15,16 @@ export default function Auth() {
   // Registration type: "corper" vs "non-corper"
   const [studentType, setStudentType] = useState("non_corper"); // default non-corper or corper
 
-  // Form state
+  // Form state - Clean real user registration without mock pre-fills
   const [formData, setFormData] = useState({
-    surname: "Udo",
-    firstName: "Blessing",
+    surname: "",
+    firstName: "",
     otherName: "",
-    email: "blessing@example.com",
-    phoneNumber: "+234 804 567 8901",
+    email: "",
+    phoneNumber: "",
     nyscStateCode: "",
-    password: "Password123@",
-    confirmPassword: "Password123@",
+    password: "",
+    confirmPassword: "",
   });
 
   const [loading, setLoading] = useState(false);
@@ -39,36 +39,22 @@ export default function Auth() {
   function handleTypeSelect(type) {
     setStudentType(type);
     if (type === "non_corper") {
-      setFormData(prev => ({
-        ...prev,
-        surname: prev.surname === "Asuquo" ? "Udo" : prev.surname,
-        firstName: prev.firstName === "Samuel" ? "Blessing" : prev.firstName,
-        otherName: "",
-        email: prev.email === "samuel@example.com" ? "blessing@example.com" : prev.email,
-        nyscStateCode: "",
-      }));
-    } else {
-      setFormData(prev => ({
-        ...prev,
-        surname: prev.surname === "Udo" ? "Asuquo" : prev.surname,
-        firstName: prev.firstName === "Blessing" ? "Samuel" : prev.firstName,
-        email: prev.email === "blessing@example.com" ? "samuel@example.com" : prev.email,
-        nyscStateCode: "AB/23A/1399",
-      }));
+      setFormData(prev => ({ ...prev, nyscStateCode: "" }));
     }
   }
 
   // Calculate live registration code preview
   function generateRegCode() {
-    const sInit = ((formData.surname || "U").trim()[0] || "U").toUpperCase();
-    const fInit = ((formData.firstName || "B").trim()[0] || "B").toUpperCase();
+    const sInit = (formData.surname.trim()[0] || "").toUpperCase();
+    const fInit = (formData.firstName.trim()[0] || "").toUpperCase();
+    if (!sInit && !fInit) return "Generated upon submission";
 
     if (studentType === "corper") {
-      const numbers = (formData.nyscStateCode || "1399").replace(/\D/g, "");
-      const numSegment = numbers.length >= 4 ? numbers.slice(-4) : "1399";
-      return `${sInit}${fInit}${numSegment}`;
+      const numbers = formData.nyscStateCode.replace(/\D/g, "");
+      const numSegment = numbers.length >= 4 ? numbers.slice(-4) : "••••";
+      return `${sInit || "•"}${fInit || "•"}${numSegment}`;
     } else {
-      return `1234${fInit}${sInit}`;
+      return `1234${fInit || "•"}${sInit || "•"}`;
     }
   }
 
@@ -81,43 +67,57 @@ export default function Auth() {
 
     try {
       if (authMode === "signup") {
-        const password = formData.password || "Password123@";
-        const fullName = `${formData.surname || ""} ${formData.firstName || ""}`.trim() || "Learner";
-        const regCode = generateRegCode();
+        if (!formData.surname.trim() || !formData.firstName.trim()) {
+          throw new Error("Please enter your surname and first name.");
+        }
+        if (!formData.email.trim()) {
+          throw new Error("Please enter a valid email address.");
+        }
+        if (studentType === "corper" && !formData.nyscStateCode.trim()) {
+          throw new Error("Please enter your NYSC State Code.");
+        }
+        if (!formData.password || formData.password.length < 6) {
+          throw new Error("Password must be at least 6 characters.");
+        }
+        if (formData.password !== formData.confirmPassword) {
+          throw new Error("Passwords do not match. Please verify both passwords.");
+        }
 
+        const fullName = `${formData.surname.trim()} ${formData.firstName.trim()}`;
         const customProfile = {
           fullName,
-          surname: formData.surname,
-          firstName: formData.firstName,
-          otherName: formData.otherName || null,
-          phoneNumber: formData.phoneNumber || "+234 800 000 0000",
+          surname: formData.surname.trim(),
+          firstName: formData.firstName.trim(),
+          otherName: formData.otherName.trim() || null,
+          phoneNumber: formData.phoneNumber.trim() || "",
           role: roleTab === "tutor" ? "tutor" : "student",
-          studentType: studentType,
-          nyscStateCode: studentType === "corper" ? formData.nyscStateCode : null,
-          regNumber: regCode,
-          status: "active",
+          studentType,
+          nyscStateCode: studentType === "corper" ? formData.nyscStateCode.trim() : null,
         };
 
-        const authRes = (await signup(formData.email || "learner@peleekings.com", password, fullName, customProfile)) || {};
-        const role = authRes.role || (roleTab === "tutor" ? "tutor" : "student");
-        const profile = authRes.profile || { regNumber: regCode, fullName };
+        const authRes = await signup(formData.email.trim(), formData.password, fullName, customProfile);
+        const role = authRes.role;
+        const profile = authRes.profile;
         setLoading(false);
 
-        // Immediate direct entry into app!
-        if (role === "admin" && formData.email?.toLowerCase() === "admin@peleekings.com") {
+        if (role === "admin" && formData.email.trim().toLowerCase() === "admin@peleekings.com") {
           navigate("/admin", { state: { welcomeToast: "Welcome Admin! System overview loaded." } });
         } else if (role === "tutor") {
           navigate("/become-instructor", { state: { welcomeToast: `Welcome ${fullName}! Instructor portal active.` } });
         } else {
-          navigate("/dashboard", { state: { welcomeToast: `Welcome ${fullName}! Your Registration Code is ${profile.regNumber || regCode}` } });
+          navigate("/dashboard", { state: { welcomeToast: `Welcome ${fullName}! Your Registration Code is ${profile.regNumber}` } });
         }
       } else {
-        // Log In
-        const authRes = (await login(formData.email, formData.password || "Password123@")) || {};
-        const role = authRes.role || "student";
-        const profile = authRes.profile || { fullName: "Learner" };
+        // Real Log In
+        if (!formData.email.trim()) throw new Error("Please enter your email address.");
+        if (!formData.password) throw new Error("Please enter your password.");
+
+        const authRes = await login(formData.email.trim(), formData.password);
+        const role = authRes.role;
+        const profile = authRes.profile;
         setLoading(false);
-        if (role === "admin" && formData.email?.toLowerCase() === "admin@peleekings.com") {
+
+        if (role === "admin" && formData.email.trim().toLowerCase() === "admin@peleekings.com") {
           navigate("/admin", { state: { welcomeToast: "Welcome Admin! Signed in successfully." } });
         } else if (role === "tutor" || role === "instructor") {
           navigate("/become-instructor");
@@ -130,22 +130,6 @@ export default function Auth() {
       setError(err.message || "Authentication error. Please check your credentials.");
       setLoading(false);
     }
-  }
-
-  // Instant 1-click access buttons
-  async function handleQuickAccess(type) {
-    setLoading(true);
-    if (type === "non_corper") {
-      await login("blessing@example.com", "Password123@");
-      navigate("/dashboard", { state: { welcomeToast: "Welcome Blessing Udo! Logged in as Non-Corper Learner." } });
-    } else if (type === "corper") {
-      await login("samuel@example.com", "Password123@");
-      navigate("/dashboard", { state: { welcomeToast: "Welcome Samuel Asuquo! Logged in as Corper Learner." } });
-    } else if (type === "admin") {
-      await login("admin@peleekings.com", "Password123@");
-      navigate("/admin", { state: { welcomeToast: "Welcome Administrator! Control console active." } });
-    }
-    setLoading(false);
   }
 
   return (
@@ -337,12 +321,12 @@ export default function Auth() {
           {authMode === "login" && (
             <>
               <div className="form-field-group">
-                <label className="form-field-label">Email Address or Registration Code</label>
+                <label className="form-field-label">Email Address</label>
                 <input
-                  type="text"
+                  type="email"
                   name="email"
                   required
-                  placeholder="e.g. blessing@example.com or 1234BU"
+                  placeholder="name@example.com"
                   className="form-field-input"
                   value={formData.email}
                   onChange={handleChange}

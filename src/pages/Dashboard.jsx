@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
-import { getUserActivity } from "../contexts/userActivity";
+import { getUserActivity, submitAssignment } from "../contexts/userActivity";
 
 export default function Dashboard() {
   const { currentUser, userProfile, logout } = useAuth();
@@ -27,11 +27,11 @@ export default function Dashboard() {
   }, [toastMessage]);
 
   const isNonCorper = userProfile?.studentType === "non_corper";
-  const userName = userProfile?.fullName || currentUser?.displayName || (isNonCorper ? "Blessing Udo" : "Samuel Asuquo");
-  const firstName = userProfile?.firstName || (userName.split(" ").length > 1 ? userName.split(" ")[0] : userName) || (isNonCorper ? "Blessing" : "Samuel");
-  const regCode = userProfile?.regNumber || (isNonCorper ? "1234BU" : "AS1399");
-  const email = currentUser?.email || userProfile?.email || "blessing@example.com";
-  const nyscCode = isNonCorper ? "Not Applicable (Non-Corper)" : (userProfile?.nyscStateCode || "AB/23A/1399");
+  const userName = userProfile?.fullName || currentUser?.displayName || currentUser?.email?.split("@")[0] || "Learner";
+  const firstName = userProfile?.firstName || (userName.split(" ").length > 1 ? userName.split(" ")[0] : userName) || "Learner";
+  const regCode = userProfile?.regNumber || (isNonCorper ? "1234NL" : "CL1399");
+  const email = currentUser?.email || userProfile?.email || "";
+  const nyscCode = isNonCorper ? "Not Applicable (Non-Corper)" : (userProfile?.nyscStateCode || "Not provided");
 
   function triggerToast(msg) {
     setToastMessage(msg);
@@ -63,6 +63,88 @@ export default function Dashboard() {
     { day: "Sat", hours: 90, label: "1h 30m" },
     { day: "Sun", hours: 20, label: "20m" },
   ];
+
+  const DEFAULT_ASSIGNMENTS = [
+    {
+      id: "ass-1",
+      title: "Zapier Automated Pipeline Architecture",
+      course: "AI Essentials & Automation",
+      due: "Fri, Oct 24 • 6:00 PM",
+      status: "Pending Submission",
+      badge: "pill-audio",
+      description: "Design and implement an automated workflow integrating a webhook trigger with an AI agent or multi-step action. Submit your architecture blueprint as a PDF or export file."
+    },
+    {
+      id: "ass-2",
+      title: "Visual Brand Identity Mockup in Figma",
+      course: "Graphic Design Fundamentals",
+      due: "Mon, Oct 27 • 11:59 PM",
+      status: "Pending Submission",
+      badge: "pill-tech",
+      description: "Create a complete visual style guide including color palette, typography hierarchy, and a mobile/desktop component set. Submit your Figma link or exported assets."
+    },
+    {
+      id: "ass-3",
+      title: "Organic Social Media Campaign Blueprint",
+      course: "Social Media Management",
+      due: "Nov 02 • 5:00 PM",
+      status: "Pending Submission",
+      badge: "pill-tech",
+      description: "Draft a 30-day content calendar, hook scripts, and audience distribution plan for a target client. Submit as a document or spreadsheet."
+    }
+  ];
+
+  const [activeUploadAssignment, setActiveUploadAssignment] = useState(null);
+  const [uploadFile, setUploadFile] = useState(null);
+  const [uploadLink, setUploadLink] = useState("");
+  const [uploadNotes, setUploadNotes] = useState("");
+  const [isSubmittingAssignment, setIsSubmittingAssignment] = useState(false);
+
+  const userSubmissions = userActivity?.assignmentSubmissions || {};
+
+  const assignments = DEFAULT_ASSIGNMENTS.map(item => {
+    const submission = userSubmissions[item.id];
+    if (submission) {
+      return {
+        ...item,
+        status: "Submitted (Under Review)",
+        badge: "pill-success",
+        submission
+      };
+    }
+    return item;
+  });
+
+  function handleAssignmentUploadSubmit(e) {
+    e.preventDefault();
+    if (!uploadFile && !uploadLink.trim()) {
+      alert("Please choose a file to upload or provide a project link.");
+      return;
+    }
+
+    setIsSubmittingAssignment(true);
+
+    setTimeout(() => {
+      const submissionData = {
+        fileName: uploadFile ? uploadFile.name : null,
+        fileSize: uploadFile ? `${(uploadFile.size / 1024).toFixed(1)} KB` : null,
+        fileType: uploadFile ? uploadFile.type : null,
+        projectLink: uploadLink.trim() || null,
+        notes: uploadNotes.trim() || null,
+        submittedAt: new Date().toISOString(),
+        studentName: userName,
+        studentEmail: email
+      };
+
+      submitAssignment(currentUser?.uid, activeUploadAssignment.id, submissionData);
+      setIsSubmittingAssignment(false);
+      triggerToast(`Assignment "${activeUploadAssignment.title}" submitted successfully!`);
+      setActiveUploadAssignment(null);
+      setUploadFile(null);
+      setUploadLink("");
+      setUploadNotes("");
+    }, 600);
+  }
 
   async function handleLogout() {
     await logout();
@@ -457,23 +539,97 @@ export default function Dashboard() {
         {/* ── TAB: ASSIGNMENTS ───────────────────────────────────────── */}
         {activeNav === "assignments" && (
           <div style={{ background: "#FFFFFF", border: "1px solid var(--border-light)", borderRadius: "var(--radius-md)", padding: 32 }}>
-            <h2 style={{ fontSize: "1.5rem", fontWeight: 800, marginBottom: 6 }}>Assignments &amp; Projects</h2>
-            <p style={{ color: "var(--text-muted)", fontSize: "0.9rem", marginBottom: 24 }}>Submit required course deliverables and view instructor grades.</p>
-            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-              {[
-                { title: "Zapier Automated Pipeline Architecture", course: "AI Essentials & Automation", due: "Fri, Oct 24 • 6:00 PM", status: "Pending Submission", badge: "pill-audio" },
-                { title: "Visual Brand Identity Mockup in Figma", course: "Graphic Design Fundamentals", due: "Mon, Oct 27 • 11:59 PM", status: "Graded (95%)", badge: "pill-success" },
-                { title: "Organic Social Media Campaign Blueprint", course: "Social Media Management", due: "Nov 02 • 5:00 PM", status: "Not Started", badge: "pill-tech" },
-              ].map((ass, i) => (
-                <div key={i} style={{ padding: 18, border: "1px solid var(--border-light)", borderRadius: "var(--radius-sm)", display: "flex", justifyContent: "space-between", alignItems: "center", background: "#F8FAFC" }}>
-                  <div>
-                    <span className={`pill-badge ${ass.badge}`} style={{ marginBottom: 4 }}>{ass.status}</span>
-                    <h3 style={{ fontSize: "1rem", fontWeight: 700 }}>{ass.title}</h3>
-                    <div style={{ fontSize: "0.8rem", color: "var(--text-muted)", marginTop: 2 }}>{ass.course} &bull; Due: {ass.due}</div>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 16, marginBottom: 24 }}>
+              <div>
+                <h2 style={{ fontSize: "1.5rem", fontWeight: 800, marginBottom: 6 }}>Assignments &amp; Projects</h2>
+                <p style={{ color: "var(--text-muted)", fontSize: "0.9rem" }}>Submit required course deliverables, upload practical projects, and track instructor reviews.</p>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <span className="pill-badge pill-tech" style={{ padding: "6px 12px", fontSize: "0.8rem" }}>
+                  {Object.keys(userSubmissions).length} of {DEFAULT_ASSIGNMENTS.length} Submitted
+                </span>
+              </div>
+            </div>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+              {assignments.map((ass) => (
+                <div
+                  key={ass.id}
+                  style={{
+                    padding: 22,
+                    border: "1px solid var(--border-light)",
+                    borderRadius: "var(--radius-md)",
+                    background: ass.submission ? "#F0FDF4" : "#F8FAFC",
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 14,
+                    transition: "border-color 0.2s"
+                  }}
+                >
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 12 }}>
+                    <div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                        <span className={`pill-badge ${ass.badge}`}>{ass.status}</span>
+                        <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>{ass.course}</span>
+                      </div>
+                      <h3 style={{ fontSize: "1.1rem", fontWeight: 700, color: "var(--text-primary)" }}>{ass.title}</h3>
+                      <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)", marginTop: 6, maxWidth: 680, lineHeight: 1.5 }}>
+                        {ass.description}
+                      </p>
+                    </div>
+
+                    <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 8 }}>
+                      <span style={{ fontSize: "0.78rem", color: "var(--text-muted)", fontWeight: 500 }}>Due: {ass.due}</span>
+                      <button
+                        className={`btn ${ass.submission ? "btn-outline" : "btn-solid-dark"} btn-sm`}
+                        onClick={() => {
+                          setActiveUploadAssignment(ass);
+                          setUploadFile(null);
+                          setUploadLink(ass.submission?.projectLink || "");
+                          setUploadNotes(ass.submission?.notes || "");
+                        }}
+                      >
+                        {ass.submission ? "Replace / Re-upload ↻" : "Upload Deliverable ↑"}
+                      </button>
+                    </div>
                   </div>
-                  <button className="btn btn-solid-dark btn-sm" onClick={() => triggerToast(`Submission portal opened for: ${ass.title}`)}>
-                    Submit Work &rarr;
-                  </button>
+
+                  {/* If already submitted, display submission details */}
+                  {ass.submission && (
+                    <div style={{ background: "#FFFFFF", padding: "12px 16px", borderRadius: "var(--radius-sm)", border: "1px solid #BBF7D0", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                        <div style={{ width: 34, height: 34, borderRadius: 6, background: "#DCFCE7", color: "#166534", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1rem" }}>
+                          📄
+                        </div>
+                        <div>
+                          <div style={{ fontWeight: 700, fontSize: "0.875rem", color: "#166534" }}>
+                            {ass.submission.fileName || "Project Link Submitted"}
+                          </div>
+                          <div style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
+                            {ass.submission.fileSize && `${ass.submission.fileSize} • `}
+                            Submitted on {new Date(ass.submission.submittedAt).toLocaleDateString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                        {ass.submission.projectLink && (
+                          <a
+                            href={ass.submission.projectLink}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="btn btn-ghost btn-sm"
+                            style={{ fontSize: "0.78rem", color: "var(--primary-learner)" }}
+                          >
+                            🔗 View Project Link
+                          </a>
+                        )}
+                        <span className="pill-badge pill-success" style={{ fontSize: "0.75rem" }}>
+                          ✓ Received by Instructor
+                        </span>
+                      </div>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -633,6 +789,135 @@ export default function Dashboard() {
               <button className="btn btn-solid-dark" style={{ width: "100%" }} onClick={() => { setShowPathModal(false); navigate("/course/ai-essentials"); }}>
                 Enroll in Path &rarr;
               </button>
+            </div>
+          </div>
+        )}
+
+        {/* ── Assignment Upload Modal ───────────────────────────────── */}
+        {activeUploadAssignment && (
+          <div className="modal-backdrop-overlay" onClick={() => !isSubmittingAssignment && setActiveUploadAssignment(null)}>
+            <div
+              className="modal-dialog-box"
+              style={{ maxWidth: 560, width: "92%", padding: "26px" }}
+              onClick={e => e.stopPropagation()}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
+                <div>
+                  <span className="pill-badge pill-tech" style={{ marginBottom: 6 }}>ASSIGNMENT SUBMISSION</span>
+                  <h3 style={{ fontSize: "1.3rem", fontWeight: 800 }}>{activeUploadAssignment.title}</h3>
+                  <div style={{ fontSize: "0.825rem", color: "var(--text-muted)", marginTop: 2 }}>{activeUploadAssignment.course}</div>
+                </div>
+                <button
+                  className="btn-ghost"
+                  onClick={() => setActiveUploadAssignment(null)}
+                  style={{ fontSize: "1.2rem", cursor: "pointer", border: "none" }}
+                  disabled={isSubmittingAssignment}
+                >
+                  ✕
+                </button>
+              </div>
+
+              <form onSubmit={handleAssignmentUploadSubmit} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                {/* File Upload Zone */}
+                <div>
+                  <label style={{ display: "block", fontSize: "0.85rem", fontWeight: 700, color: "var(--text-primary)", marginBottom: 6 }}>
+                    Upload Deliverable File (PDF, ZIP, DOCX, Images, Figma)
+                  </label>
+                  <div
+                    style={{
+                      border: "2px dashed var(--border-light)",
+                      borderRadius: "var(--radius-md)",
+                      padding: "24px 16px",
+                      textAlign: "center",
+                      background: uploadFile ? "#F0FDF4" : "#F8FAFC",
+                      borderColor: uploadFile ? "var(--success-border, #86EFAC)" : "var(--border-light)",
+                      cursor: "pointer",
+                      transition: "all 0.2s"
+                    }}
+                    onClick={() => document.getElementById("assignment-file-input")?.click()}
+                  >
+                    <input
+                      id="assignment-file-input"
+                      type="file"
+                      style={{ display: "none" }}
+                      onChange={e => {
+                        if (e.target.files?.[0]) {
+                          setUploadFile(e.target.files[0]);
+                        }
+                      }}
+                      accept=".pdf,.doc,.docx,.zip,.png,.jpg,.jpeg,.fig,.txt"
+                    />
+
+                    {uploadFile ? (
+                      <div>
+                        <div style={{ fontSize: "2rem", marginBottom: 6 }}>✅</div>
+                        <div style={{ fontWeight: 700, fontSize: "0.95rem", color: "#15803D" }}>{uploadFile.name}</div>
+                        <div style={{ fontSize: "0.8rem", color: "var(--text-muted)", marginTop: 2 }}>
+                          {(uploadFile.size / 1024).toFixed(1)} KB • Click to choose a different file
+                        </div>
+                      </div>
+                    ) : (
+                      <div>
+                        <div style={{ fontSize: "2rem", marginBottom: 6 }}>📁</div>
+                        <div style={{ fontWeight: 700, fontSize: "0.925rem", color: "var(--text-primary)" }}>
+                          Click to browse or drag &amp; drop file here
+                        </div>
+                        <div style={{ fontSize: "0.78rem", color: "var(--text-muted)", marginTop: 4 }}>
+                          Supports PDF, ZIP, DOCX, PNG, JPG (Max 25MB)
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Alternative / Supplemental Project URL */}
+                <div>
+                  <label style={{ display: "block", fontSize: "0.85rem", fontWeight: 700, color: "var(--text-primary)", marginBottom: 6 }}>
+                    Project Link / Repository URL (Optional)
+                  </label>
+                  <input
+                    type="url"
+                    className="form-field-input"
+                    placeholder="e.g. https://www.figma.com/file/... or https://github.com/..."
+                    value={uploadLink}
+                    onChange={e => setUploadLink(e.target.value)}
+                    style={{ background: "#F8FAFC" }}
+                  />
+                </div>
+
+                {/* Learner Notes to Instructor */}
+                <div>
+                  <label style={{ display: "block", fontSize: "0.85rem", fontWeight: 700, color: "var(--text-primary)", marginBottom: 6 }}>
+                    Notes / Comments for Grader (Optional)
+                  </label>
+                  <textarea
+                    rows="3"
+                    className="form-field-input"
+                    placeholder="Add any specific context, login test details, or notes on your design decisions..."
+                    value={uploadNotes}
+                    onChange={e => setUploadNotes(e.target.value)}
+                    style={{ background: "#F8FAFC", resize: "vertical" }}
+                  />
+                </div>
+
+                <div style={{ display: "flex", justifyContent: "flex-end", gap: 12, marginTop: 8 }}>
+                  <button
+                    type="button"
+                    className="btn btn-outline"
+                    onClick={() => setActiveUploadAssignment(null)}
+                    disabled={isSubmittingAssignment}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="btn btn-solid-dark"
+                    disabled={isSubmittingAssignment}
+                  >
+                    {isSubmittingAssignment ? "Uploading Deliverable..." : "Submit Assignment &rarr;"}
+                  </button>
+                </div>
+              </form>
             </div>
           </div>
         )}

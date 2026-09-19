@@ -14,42 +14,38 @@ import { auth, db } from "../firebase";
 
 const AuthContext = createContext(null);
 
-const DEFAULT_AUTH_FALLBACK = {
-  currentUser: null,
-  userProfile: null,
-  signup: async (email = "blessing@example.com", password = "", displayName = "Blessing Udo", customProfile = {}) => ({
-    user: { email, displayName },
-    role: email.toLowerCase() === "admin@peleekings.com" ? "admin" : (customProfile.role || "student"),
-    profile: {
-      email,
-      displayName,
-      fullName: displayName,
-      role: email.toLowerCase() === "admin@peleekings.com" ? "admin" : (customProfile.role || "student"),
-      studentType: customProfile.studentType || "non_corper",
-      regNumber: customProfile.regNumber || (customProfile.studentType === "corper" ? "AS1399" : "1234BU"),
-      ...customProfile
-    }
-  }),
-  login: async (identifier = "blessing@example.com") => ({
-    user: { email: identifier },
-    role: identifier.toLowerCase() === "admin@peleekings.com" ? "admin" : "student",
-    profile: {
-      email: identifier,
-      displayName: identifier.toLowerCase() === "admin@peleekings.com" ? "Platform Administrator" : "Blessing Udo",
-      role: identifier.toLowerCase() === "admin@peleekings.com" ? "admin" : "student",
-      studentType: identifier.toLowerCase() === "admin@peleekings.com" ? "admin" : "non_corper",
-      regNumber: identifier.toLowerCase() === "admin@peleekings.com" ? "ADM-001" : "1234BU",
-    }
-  }),
-  logout: async () => {},
-  loginWithGoogle: async () => {},
-  resetPassword: async () => {},
-  updateUserRole: async () => {},
-};
+// Format Firebase auth error codes into clear, user-friendly messages
+function formatAuthError(err) {
+  if (!err) return "An unknown authentication error occurred.";
+  const code = err.code || "";
+  switch (code) {
+    case "auth/invalid-credential":
+    case "auth/wrong-password":
+    case "auth/user-not-found":
+      return "Invalid email or password. Please verify your credentials.";
+    case "auth/email-already-in-use":
+      return "An account with this email address already exists. Please sign in.";
+    case "auth/weak-password":
+      return "Password should be at least 6 characters.";
+    case "auth/invalid-email":
+      return "Please enter a valid email address.";
+    case "auth/network-request-failed":
+      return "Network connection issue. Please check your internet connection.";
+    case "auth/too-many-requests":
+      return "Too many unsuccessful attempts. Please try again later or reset your password.";
+    case "auth/popup-closed-by-user":
+      return "Google sign-in was cancelled before completion.";
+    default:
+      return err.message || "Authentication failed. Please try again.";
+  }
+}
 
 export function useAuth() {
   const context = useContext(AuthContext);
-  return context || DEFAULT_AUTH_FALLBACK;
+  if (!context) {
+    throw new Error("useAuth must be used within an AuthProvider");
+  }
+  return context;
 }
 
 export function AuthProvider({ children }) {
@@ -81,207 +77,216 @@ export function AuthProvider({ children }) {
 
   const [loading, setLoading] = useState(false);
 
+  // Real Account Registration with Firebase Auth & Firestore
   async function signup(email, password, displayName, customProfile = {}) {
-    let uid = `user-${Date.now()}`;
-    const cleanEmail = (email || "learner@peleekings.com").trim();
-    const cleanName = (displayName || cleanEmail.split("@")[0] || "Learner").trim();
+    const cleanEmail = (email || "").trim().toLowerCase();
+    const cleanName = (displayName || "").trim();
 
-    // Determine role & student type: strictly require admin@peleekings.com for admin access
-    const role = (cleanEmail.toLowerCase() === "admin@peleekings.com") ? "admin" : (customProfile.role || "student");
-    const isNonCorper = customProfile.studentType === "non_corper";
-    
-    // Compute fallback registration code
-    let regNumber = customProfile.regNumber;
-    if (!regNumber) {
-      if (role === "admin") {
-        regNumber = "ADM-001";
-      } else if (isNonCorper) {
-        regNumber = "1234SA";
-      } else {
-        regNumber = "AS1399";
-      }
-    }
-
-    const profileData = {
-      uid,
-      email: cleanEmail,
-      displayName: cleanName,
-      fullName: cleanName,
-      role,
-      studentType: customProfile.studentType || "corper",
-      nyscStateCode: isNonCorper ? null : (customProfile.nyscStateCode || "AB/23A/1399"),
-      regNumber,
-      createdAt: new Date().toISOString(),
-      enrolledCourses: ["AI Essentials & Automation"],
-      completedLessons: [],
-      ...customProfile,
-    };
-
-    const userObj = { uid, email: cleanEmail, displayName: cleanName };
-    setCurrentUser(userObj);
-    setUserProfile(profileData);
+    if (!cleanEmail) throw new Error("Please provide a valid email address.");
+    if (!password || password.length < 6) throw new Error("Password must be at least 6 characters.");
 
     try {
+      // 1. Create real account in Firebase Authentication
+      const userCredential = await createUserWithEmailAndPassword(auth, cleanEmail, password);
+      const user = userCredential.user;
+
+      // 2. Set Firebase Auth display name
+      if (cleanName) {
+        try {
+          await updateProfile(user, { displayName: cleanName });
+        } catch (e) {
+          console.warn("Could not set display name in Firebase Auth:", e);
+        }
+      }
+
+      // 3. Compute registration code based on real user details
+      const role = cleanEmail === "admin@peleekings.com" ? "admin" : (customProfile.role || "student");
+      const isNonCorper = customProfile.studentType === "non_corper";
+      let regNumber = customProfile.regNumber;
+      if (!regNumber) {
+        if (role === "admin") {
+          regNumber = "ADM-001";
+        } else if (isNonCorper) {
+          const inits = cleanName.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase() || "NL";
+          regNumber = `1234${inits}`;
+        } else {
+          const inits = cleanName.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase() || "CL";
+          const numbers = (customProfile.nyscStateCode || "1399").replace(/\D/g, "");
+          const numSegment = numbers.length >= 4 ? numbers.slice(-4) : "1399";
+          regNumber = `${inits}${numSegment}`;
+        }
+      }
+
+      const profileData = {
+        uid: user.uid,
+        email: cleanEmail,
+        displayName: cleanName,
+        fullName: cleanName,
+        role,
+        studentType: customProfile.studentType || "non_corper",
+        nyscStateCode: isNonCorper ? null : (customProfile.nyscStateCode || null),
+        phoneNumber: customProfile.phoneNumber || "",
+        regNumber,
+        createdAt: new Date().toISOString(),
+        enrolledCourses: ["AI Essentials & Automation"],
+        status: "active",
+        ...customProfile,
+      };
+
+      // 4. Save to Firestore
+      try {
+        await setDoc(doc(db, "users", user.uid), profileData, { merge: true });
+      } catch (err) {
+        console.warn("Firestore save notice:", err);
+      }
+
+      const userObj = {
+        uid: user.uid,
+        email: user.email,
+        displayName: cleanName,
+        photoURL: user.photoURL || null,
+      };
+
+      setCurrentUser(userObj);
+      setUserProfile(profileData);
       sessionStorage.setItem("peleekings_active_session", "true");
       localStorage.setItem("peleekings_auth_user", JSON.stringify(userObj));
       localStorage.setItem("peleekings_user_profile", JSON.stringify(profileData));
 
-      // Save into global registry of all users so future logins remember Non-Corper or Corper
-      const allUsers = JSON.parse(localStorage.getItem("peleekings_all_registered_users") || "{}");
-      allUsers[cleanEmail.toLowerCase()] = profileData;
-      allUsers[regNumber.toLowerCase()] = profileData;
-      localStorage.setItem("peleekings_all_registered_users", JSON.stringify(allUsers));
-
-      // Non-blocking Firestore sync
-      setDoc(doc(db, "users", uid), profileData, { merge: true }).catch(() => {});
-    } catch {}
-
-    // Non-blocking Firebase Auth sync (never hang on network)
-    createUserWithEmailAndPassword(auth, cleanEmail, password || "Password123@")
-      .then(result => {
-        if (result?.user) {
-          updateProfile(result.user, { displayName: cleanName }).catch(() => {});
-        }
-      })
-      .catch(authErr => {
-        console.warn("Firebase Auth background signup notice:", authErr?.message || authErr);
-      });
-
-    return { user: userObj, role, profile: profileData };
+      return { user: userObj, role, profile: profileData };
+    } catch (err) {
+      throw new Error(formatAuthError(err));
+    }
   }
 
-  async function login(identifier = "", password = "") {
-    let cleanId = (identifier || "samuel@example.com").trim();
-    let email = cleanId;
-    let uid = `user-${Date.now()}`;
-    let displayName = "Samuel Asuquo";
-    let studentType = "corper";
-    let regNumber = "AS1399";
-    let role = "student";
+  // Real Account Login with Firebase Auth & Firestore
+  async function login(email, password) {
+    const cleanEmail = (email || "").trim().toLowerCase();
+    if (!cleanEmail) throw new Error("Please enter your email address.");
+    if (!password) throw new Error("Please enter your password.");
 
-    // 1. Check if Admin - strictly only admin@peleekings.com
-    if (cleanId.toLowerCase() === "admin@peleekings.com") {
-      role = "admin";
-      displayName = "Platform Administrator";
-      studentType = "admin";
-      regNumber = "ADM-001";
-      email = "admin@peleekings.com";
-    }
-
-    // 2. Check registered users cache
     try {
-      const allUsers = JSON.parse(localStorage.getItem("peleekings_all_registered_users") || "{}");
-      const matched = allUsers[cleanId.toLowerCase()];
-      if (matched) {
-        email = matched.email || email;
-        displayName = matched.fullName || matched.displayName || displayName;
-        studentType = matched.studentType || studentType;
-        regNumber = matched.regNumber || regNumber;
-        role = matched.role || role;
-      }
-    } catch {}
+      // 1. Authenticate with Firebase Auth
+      const userCredential = await signInWithEmailAndPassword(auth, cleanEmail, password);
+      const user = userCredential.user;
 
-    // 3. Known Non-Corper profiles (e.g. Blessing Udo or non-corper logins)
-    if (cleanId.toLowerCase().includes("blessing") || cleanId.toLowerCase().includes("non") || cleanId.startsWith("1234")) {
-      studentType = "non_corper";
-      if (!displayName || displayName === "Samuel Asuquo") displayName = "Blessing Udo";
-      if (!email.includes("@")) email = "blessing@example.com";
-      if (regNumber === "AS1399") regNumber = "1234BU";
-    }
-
-    let profileData = {
-      uid,
-      email,
-      displayName,
-      fullName: displayName,
-      role,
-      studentType,
-      regNumber,
-      enrolledCourses: ["AI Essentials & Automation"],
-      status: "active",
-    };
-
-    // Check if we have active user profile cached in localStorage
-    try {
-      const cached = localStorage.getItem("peleekings_user_profile");
-      if (cached) {
-        const parsed = JSON.parse(cached);
-        if (parsed.email === email || parsed.regNumber === cleanId) {
-          profileData = { ...parsed, role: email.toLowerCase() === "admin@peleekings.com" ? "admin" : (parsed.role === "admin" ? "student" : parsed.role) };
+      // 2. Fetch real user profile from Firestore
+      let profileData = null;
+      try {
+        const docSnap = await getDoc(doc(db, "users", user.uid));
+        if (docSnap.exists()) {
+          profileData = docSnap.data();
         }
+      } catch (err) {
+        console.warn("Firestore profile fetch notice:", err);
       }
-    } catch {}
 
-    const userObj = { uid, email, displayName };
-    setCurrentUser(userObj);
-    setUserProfile(profileData);
+      if (!profileData) {
+        const role = user.email?.toLowerCase() === "admin@peleekings.com" ? "admin" : "student";
+        const inits = (user.displayName || "NL").split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase() || "NL";
+        profileData = {
+          uid: user.uid,
+          email: user.email,
+          displayName: user.displayName || user.email.split("@")[0],
+          fullName: user.displayName || user.email.split("@")[0],
+          role,
+          studentType: "non_corper",
+          regNumber: role === "admin" ? "ADM-001" : `1234${inits}`,
+          enrolledCourses: ["AI Essentials & Automation"],
+          status: "active",
+        };
+      }
 
-    try {
+      // Strictly lock admin role only to admin@peleekings.com
+      if (user.email?.toLowerCase() === "admin@peleekings.com") {
+        profileData.role = "admin";
+      } else if (profileData.role === "admin") {
+        profileData.role = "student";
+      }
+
+      const userObj = {
+        uid: user.uid,
+        email: user.email,
+        displayName: profileData.fullName || user.displayName || user.email.split("@")[0],
+        photoURL: user.photoURL || null,
+      };
+
+      setCurrentUser(userObj);
+      setUserProfile(profileData);
       sessionStorage.setItem("peleekings_active_session", "true");
       localStorage.setItem("peleekings_auth_user", JSON.stringify(userObj));
       localStorage.setItem("peleekings_user_profile", JSON.stringify(profileData));
-    } catch {}
 
-    // Non-blocking Firebase Auth sync
-    if (email.includes("@")) {
-      signInWithEmailAndPassword(auth, email, password || "Password123@").catch(err => {
-        console.warn("Firebase Auth login background sync notice:", err?.message || err);
-      });
+      return { user: userObj, role: profileData.role, profile: profileData };
+    } catch (err) {
+      throw new Error(formatAuthError(err));
     }
-
-    // Background Firestore check
-    getDoc(doc(db, "users", uid)).then(snap => {
-      if (snap.exists()) {
-        const firestoreData = snap.data();
-        if (email.toLowerCase().includes("admin")) firestoreData.role = "admin";
-        setUserProfile(firestoreData);
-        try {
-          localStorage.setItem("peleekings_user_profile", JSON.stringify(firestoreData));
-        } catch {}
-      }
-    }).catch(() => {});
-
-    return { user: userObj, role, profile: profileData };
   }
 
   async function loginWithGoogle() {
     const provider = new GoogleAuthProvider();
     try {
       const result = await signInWithPopup(auth, provider);
-      if (result?.user) {
-        const uid = result.user.uid;
-        const email = result.user.email;
-        const displayName = result.user.displayName || "Google User";
-        const role = (email && email.toLowerCase().includes("admin")) ? "admin" : "student";
-        const profile = {
-          uid,
-          email,
-          displayName,
-          fullName: displayName,
-          role,
-          studentType: "corper",
-          regNumber: "AS1399",
-          enrolledCourses: ["AI Essentials & Automation"],
+      const user = result.user;
+      if (user) {
+        let profileData = null;
+        try {
+          const docSnap = await getDoc(doc(db, "users", user.uid));
+          if (docSnap.exists()) {
+            profileData = docSnap.data();
+          }
+        } catch {}
+
+        if (!profileData) {
+          const role = user.email?.toLowerCase() === "admin@peleekings.com" ? "admin" : "student";
+          const inits = (user.displayName || "NL").split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase() || "NL";
+          profileData = {
+            uid: user.uid,
+            email: user.email,
+            displayName: user.displayName,
+            fullName: user.displayName,
+            role,
+            studentType: "non_corper",
+            regNumber: role === "admin" ? "ADM-001" : `1234${inits}`,
+            enrolledCourses: ["AI Essentials & Automation"],
+            status: "active",
+            createdAt: new Date().toISOString(),
+          };
+          try {
+            await setDoc(doc(db, "users", user.uid), profileData, { merge: true });
+          } catch {}
+        }
+
+        const userObj = {
+          uid: user.uid,
+          email: user.email,
+          displayName: user.displayName,
+          photoURL: user.photoURL,
         };
-        setCurrentUser({ uid, email, displayName });
-        setUserProfile(profile);
-        localStorage.setItem("peleekings_auth_user", JSON.stringify({ uid, email, displayName }));
-        localStorage.setItem("peleekings_user_profile", JSON.stringify(profile));
+
+        setCurrentUser(userObj);
+        setUserProfile(profileData);
+        sessionStorage.setItem("peleekings_active_session", "true");
+        localStorage.setItem("peleekings_auth_user", JSON.stringify(userObj));
+        localStorage.setItem("peleekings_user_profile", JSON.stringify(profileData));
+        return { user: userObj, role: profileData.role, profile: profileData };
       }
-      return result;
-    } catch (e) {
-      console.warn("Google sign in notice:", e);
+    } catch (err) {
+      throw new Error(formatAuthError(err));
     }
   }
 
   function resetPassword(email) {
-    return sendPasswordResetEmail(auth, email);
+    const cleanEmail = (email || "").trim().toLowerCase();
+    if (!cleanEmail) throw new Error("Please enter your email address to reset password.");
+    return sendPasswordResetEmail(auth, cleanEmail);
   }
 
   async function logout() {
     try {
       localStorage.removeItem("peleekings_auth_user");
       localStorage.removeItem("peleekings_user_profile");
+      sessionStorage.removeItem("peleekings_active_session");
       sessionStorage.removeItem("adminAccess");
     } catch {}
     setCurrentUser(null);
@@ -303,7 +308,7 @@ export function AuthProvider({ children }) {
           displayName: user.displayName || user.email.split("@")[0],
           photoURL: user.photoURL,
         };
-        // 1. Immediately load cached profile for instantaneous UI rendering
+
         try {
           const cached = localStorage.getItem("peleekings_user_profile");
           if (cached) {
@@ -312,7 +317,6 @@ export function AuthProvider({ children }) {
         } catch {}
         setLoading(false);
 
-        // 2. Non-blocking background Firestore sync
         getDoc(doc(db, "users", user.uid))
           .then(docSnap => {
             if (docSnap.exists()) {

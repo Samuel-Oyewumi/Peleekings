@@ -156,3 +156,19 @@ export function submitUserMilestone(userId, milestone) {
   saveUserActivity(userId, updatedActivity);
   return updatedActivity;
 }
+
+export function submitAssignment(userId, assignmentId, submissionData) {
+  const current = getUserActivity(userId);
+  const submissions = { ...(current.assignmentSubmissions || {}) };
+  submissions[assignmentId] = {
+    submittedAt: new Date().toISOString(),
+    ...submissionData
+  };
+  const updatedActivity = {
+    ...current,
+    assignmentSubmissions: submissions
+  };
+  saveUserActivity(userId, updatedActivity);
+  return updatedActivity;
+}
+

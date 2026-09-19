@@ -129,7 +129,7 @@ export default function Navbar() {
     return matchesCategory && matchesQuery;
   });
 
-  const initials = (currentUser?.displayName || userProfile?.fullName || "BU")
+  const initials = (currentUser?.displayName || userProfile?.fullName || currentUser?.email?.slice(0, 2) || "PK")
     .split(" ")
     .map(n => n[0])
     .join("")
@@ -356,10 +356,10 @@ export default function Navbar() {
                 >
                   <div style={{ padding: "10px 16px", borderBottom: "1px solid var(--border-subtle)" }}>
                     <div style={{ fontWeight: 700, fontSize: "0.9rem", color: "var(--text-primary)" }}>
-                      {activeUser?.displayName || userProfile?.fullName || "Blessing Udo"}
+                      {activeUser?.displayName || userProfile?.fullName || "Learner"}
                     </div>
                     <div style={{ fontSize: "0.775rem", color: "var(--text-muted)" }}>
-                      {activeUser?.email || "blessing@example.com"}
+                      {activeUser?.email || ""}
                     </div>
                     {userProfile?.regNumber && (
                       <div className="pill-badge pill-success" style={{ marginTop: 6 }}>
