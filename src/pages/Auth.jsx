@@ -158,7 +158,7 @@ export default function Auth() {
             <span>Peleekings</span>
           </Link>
           <h1 style={{ fontSize: "1.65rem", fontWeight: 800, color: "var(--text-primary)", marginBottom: 6 }}>
-            {authMode === "signup" ? "Create your Peleekings account" : "Welcome back to Peleekings"}
+            {authMode === "signup" ? "Create your account" : "Welcome back"}
           </h1>
           <p style={{ fontSize: "0.875rem", color: "var(--text-muted)" }}>
             {authMode === "signup" ? "Choose how you want to register." : "Sign in to access your dashboard and courses."}

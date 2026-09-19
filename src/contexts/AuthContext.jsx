@@ -303,26 +303,37 @@ export function AuthProvider({ children }) {
           displayName: user.displayName || user.email.split("@")[0],
           photoURL: user.photoURL,
         };
-        setCurrentUser(userObj);
+        // 1. Immediately load cached profile for instantaneous UI rendering
         try {
-          const docRef = doc(db, "users", user.uid);
-          const docSnap = await getDoc(docRef);
-          if (docSnap.exists()) {
-            const data = docSnap.data();
-            if (user.email && user.email.toLowerCase().includes("admin")) {
-              data.role = "admin";
-            }
-            setUserProfile(data);
-            localStorage.setItem("peleekings_user_profile", JSON.stringify(data));
+          const cached = localStorage.getItem("peleekings_user_profile");
+          if (cached) {
+            setUserProfile(JSON.parse(cached));
           }
-        } catch (err) {
-          console.warn("User profile background check:", err);
-        }
+        } catch {}
+        setLoading(false);
+
+        // 2. Non-blocking background Firestore sync
+        getDoc(doc(db, "users", user.uid))
+          .then(docSnap => {
+            if (docSnap.exists()) {
+              const data = docSnap.data();
+              if (user.email && user.email.toLowerCase().includes("admin")) {
+                data.role = "admin";
+              }
+              setUserProfile(data);
+              try {
+                localStorage.setItem("peleekings_user_profile", JSON.stringify(data));
+              } catch {}
+            }
+          })
+          .catch(err => {
+            console.warn("User profile background check:", err);
+          });
       } else {
         setCurrentUser(null);
         setUserProfile(null);
+        setLoading(false);
       }
-      setLoading(false);
     });
     return unsubscribe;
   }, []);
