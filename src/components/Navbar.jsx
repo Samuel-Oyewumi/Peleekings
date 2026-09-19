@@ -110,12 +110,17 @@ export default function Navbar() {
           className="nav-item-link"
           id="nav-learning-paths"
           onClick={(e) => {
-            e.preventDefault();
-            if (location.pathname !== "/") navigate("/");
-            setTimeout(() => {
+            if (location.pathname !== "/") {
+              navigate("/");
+              setTimeout(() => {
+                const el = document.getElementById("learning-paths-section");
+                if (el) el.scrollIntoView({ behavior: "smooth" });
+              }, 120);
+            } else {
+              e.preventDefault();
               const el = document.getElementById("learning-paths-section");
               if (el) el.scrollIntoView({ behavior: "smooth" });
-            }, 100);
+            }
           }}
         >
           Learning Paths
@@ -416,9 +421,19 @@ export default function Navbar() {
             <Link
               to="/"
               className="mobile-nav-link"
-              onClick={() => {
+              onClick={(e) => {
                 setShowMobileMenu(false);
-                document.getElementById("learning-paths-section")?.scrollIntoView({ behavior: "smooth" });
+                if (location.pathname !== "/") {
+                  navigate("/");
+                  setTimeout(() => {
+                    const el = document.getElementById("learning-paths-section");
+                    if (el) el.scrollIntoView({ behavior: "smooth" });
+                  }, 120);
+                } else {
+                  e.preventDefault();
+                  const el = document.getElementById("learning-paths-section");
+                  if (el) el.scrollIntoView({ behavior: "smooth" });
+                }
               }}
             >
               Learning Paths

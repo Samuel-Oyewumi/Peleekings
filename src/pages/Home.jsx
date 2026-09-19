@@ -287,7 +287,7 @@ export default function Home() {
       </section>
 
       {/* ── Category Overview ("Explore what you can learn") ─────────── */}
-      <section className="category-overview-section" id="skills-overview">
+      <section className="category-overview-section" id="learning-paths-section" style={{ scrollMarginTop: "90px" }}>
         <div className="section-title-row">
           <div>
             <h2 style={{ fontSize: "1.75rem", fontWeight: 800, marginBottom: 4 }}>
@@ -309,7 +309,7 @@ export default function Home() {
           </button>
         </div>
 
-        <div className="skills-deck-grid" id="learning-paths-section">
+        <div className="skills-deck-grid">
           {/* Card 1: Tech & Digital Skills */}
           <div className="skill-category-box">
             <div className="skill-box-header">
