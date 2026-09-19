@@ -19,12 +19,12 @@ const DEFAULT_AUTH_FALLBACK = {
   userProfile: null,
   signup: async (email = "blessing@example.com", password = "", displayName = "Blessing Udo", customProfile = {}) => ({
     user: { email, displayName },
-    role: email.toLowerCase().includes("admin") ? "admin" : (customProfile.role || "student"),
+    role: email.toLowerCase() === "admin@peleekings.com" ? "admin" : (customProfile.role || "student"),
     profile: {
       email,
       displayName,
       fullName: displayName,
-      role: email.toLowerCase().includes("admin") ? "admin" : (customProfile.role || "student"),
+      role: email.toLowerCase() === "admin@peleekings.com" ? "admin" : (customProfile.role || "student"),
       studentType: customProfile.studentType || "non_corper",
       regNumber: customProfile.regNumber || (customProfile.studentType === "corper" ? "AS1399" : "1234BU"),
       ...customProfile
@@ -32,13 +32,13 @@ const DEFAULT_AUTH_FALLBACK = {
   }),
   login: async (identifier = "blessing@example.com") => ({
     user: { email: identifier },
-    role: identifier.toLowerCase().includes("admin") ? "admin" : "student",
+    role: identifier.toLowerCase() === "admin@peleekings.com" ? "admin" : "student",
     profile: {
       email: identifier,
-      displayName: identifier.toLowerCase().includes("admin") ? "Platform Administrator" : "Blessing Udo",
-      role: identifier.toLowerCase().includes("admin") ? "admin" : "student",
-      studentType: identifier.toLowerCase().includes("admin") ? "admin" : "non_corper",
-      regNumber: identifier.toLowerCase().includes("admin") ? "ADM-001" : "1234BU",
+      displayName: identifier.toLowerCase() === "admin@peleekings.com" ? "Platform Administrator" : "Blessing Udo",
+      role: identifier.toLowerCase() === "admin@peleekings.com" ? "admin" : "student",
+      studentType: identifier.toLowerCase() === "admin@peleekings.com" ? "admin" : "non_corper",
+      regNumber: identifier.toLowerCase() === "admin@peleekings.com" ? "ADM-001" : "1234BU",
     }
   }),
   logout: async () => {},
@@ -86,8 +86,8 @@ export function AuthProvider({ children }) {
     const cleanEmail = (email || "learner@peleekings.com").trim();
     const cleanName = (displayName || cleanEmail.split("@")[0] || "Learner").trim();
 
-    // Determine role & student type
-    const role = (cleanEmail.toLowerCase().includes("admin")) ? "admin" : (customProfile.role || "student");
+    // Determine role & student type: strictly require admin@peleekings.com for admin access
+    const role = (cleanEmail.toLowerCase() === "admin@peleekings.com") ? "admin" : (customProfile.role || "student");
     const isNonCorper = customProfile.studentType === "non_corper";
     
     // Compute fallback registration code
@@ -159,13 +159,13 @@ export function AuthProvider({ children }) {
     let regNumber = "AS1399";
     let role = "student";
 
-    // 1. Check if Admin
-    if (cleanId.toLowerCase().includes("admin")) {
+    // 1. Check if Admin - strictly only admin@peleekings.com
+    if (cleanId.toLowerCase() === "admin@peleekings.com") {
       role = "admin";
       displayName = "Platform Administrator";
       studentType = "admin";
       regNumber = "ADM-001";
-      email = cleanId.includes("@") ? cleanId : "admin@peleekings.com";
+      email = "admin@peleekings.com";
     }
 
     // 2. Check registered users cache
@@ -207,7 +207,7 @@ export function AuthProvider({ children }) {
       if (cached) {
         const parsed = JSON.parse(cached);
         if (parsed.email === email || parsed.regNumber === cleanId) {
-          profileData = { ...parsed, role: role === "admin" ? "admin" : parsed.role };
+          profileData = { ...parsed, role: email.toLowerCase() === "admin@peleekings.com" ? "admin" : (parsed.role === "admin" ? "student" : parsed.role) };
         }
       }
     } catch {}
@@ -317,8 +317,10 @@ export function AuthProvider({ children }) {
           .then(docSnap => {
             if (docSnap.exists()) {
               const data = docSnap.data();
-              if (user.email && user.email.toLowerCase().includes("admin")) {
+              if (user.email && user.email.toLowerCase() === "admin@peleekings.com") {
                 data.role = "admin";
+              } else if (data.role === "admin") {
+                data.role = "student";
               }
               setUserProfile(data);
               try {

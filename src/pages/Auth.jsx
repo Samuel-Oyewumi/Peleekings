@@ -99,12 +99,12 @@ export default function Auth() {
         };
 
         const authRes = (await signup(formData.email || "learner@peleekings.com", password, fullName, customProfile)) || {};
-        const role = authRes.role || ((formData.email && formData.email.toLowerCase().includes("admin")) ? "admin" : (roleTab === "tutor" ? "tutor" : "student"));
+        const role = authRes.role || (roleTab === "tutor" ? "tutor" : "student");
         const profile = authRes.profile || { regNumber: regCode, fullName };
         setLoading(false);
 
         // Immediate direct entry into app!
-        if (role === "admin" || (formData.email && formData.email.toLowerCase().includes("admin"))) {
+        if (role === "admin" && formData.email?.toLowerCase() === "admin@peleekings.com") {
           navigate("/admin", { state: { welcomeToast: "Welcome Admin! System overview loaded." } });
         } else if (role === "tutor") {
           navigate("/become-instructor", { state: { welcomeToast: `Welcome ${fullName}! Instructor portal active.` } });
@@ -114,10 +114,10 @@ export default function Auth() {
       } else {
         // Log In
         const authRes = (await login(formData.email, formData.password || "Password123@")) || {};
-        const role = authRes.role || ((formData.email && formData.email.toLowerCase().includes("admin")) ? "admin" : "student");
+        const role = authRes.role || "student";
         const profile = authRes.profile || { fullName: "Learner" };
         setLoading(false);
-        if (role === "admin" || (formData.email && formData.email.toLowerCase().includes("admin"))) {
+        if (role === "admin" && formData.email?.toLowerCase() === "admin@peleekings.com") {
           navigate("/admin", { state: { welcomeToast: "Welcome Admin! Signed in successfully." } });
         } else if (role === "tutor" || role === "instructor") {
           navigate("/become-instructor");
@@ -379,41 +379,6 @@ export default function Auth() {
           </button>
         </form>
 
-        {/* ⚡ Instant 1-Click Fast Access */}
-        <div style={{ marginTop: 20, paddingTop: 16, borderTop: "1px solid var(--border-light)", textAlign: "center" }}>
-          <div style={{ fontSize: "0.75rem", fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 10 }}>
-            ⚡ Instant 1-Click Access
-          </div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
-            <button
-              type="button"
-              onClick={() => handleQuickAccess("non_corper")}
-              className="btn btn-outline btn-sm"
-              style={{ fontSize: "0.76rem", padding: "8px 4px", display: "flex", alignItems: "center", justifyContent: "center", gap: 4 }}
-              title="Enter instantly as Non-Corper learner"
-            >
-              <span>👤</span> Non-Corper
-            </button>
-            <button
-              type="button"
-              onClick={() => handleQuickAccess("corper")}
-              className="btn btn-outline btn-sm"
-              style={{ fontSize: "0.76rem", padding: "8px 4px", display: "flex", alignItems: "center", justifyContent: "center", gap: 4 }}
-              title="Enter instantly as Corper learner"
-            >
-              <span>🎓</span> Corper
-            </button>
-            <button
-              type="button"
-              onClick={() => handleQuickAccess("admin")}
-              className="btn btn-outline btn-sm"
-              style={{ fontSize: "0.76rem", padding: "8px 4px", display: "flex", alignItems: "center", justifyContent: "center", gap: 4 }}
-              title="Enter instantly as Platform Administrator"
-            >
-              <span>🛡️</span> Admin
-            </button>
-          </div>
-        </div>
 
         <div style={{ textAlign: "center", marginTop: 18, fontSize: "0.85rem", color: "var(--text-muted)" }}>
           {authMode === "signup" ? (

@@ -32,8 +32,8 @@ export default function ProtectedRoute({ children, adminOnly = false }) {
 
   const activeProfile = userProfile || cachedProfile;
   const isAdmin =
-    activeProfile?.role === "admin" ||
-    (activeUser?.email && activeUser.email.toLowerCase().includes("admin"));
+    activeProfile?.role === "admin" &&
+    activeUser?.email?.toLowerCase() === "admin@peleekings.com";
 
   if (adminOnly && !isAdmin) {
     return <Navigate to="/dashboard" replace />;

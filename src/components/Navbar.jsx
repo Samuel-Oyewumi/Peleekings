@@ -13,12 +13,39 @@ export default function Navbar() {
   const [showResourcesModal, setShowResourcesModal] = useState(false);
   const [showMobileMenu, setShowMobileMenu] = useState(false);
 
-  // Notifications state
+  // Notifications state with full messages
   const [notifications, setNotifications] = useState([
-    { id: 1, title: "Assignment Graded", text: "Module 02 Prompt Engineering received 95%", time: "2h ago", unread: true },
-    { id: 2, title: "New Lesson Available", text: "AI Essentials & Automation: Module 5 unlocked", time: "1d ago", unread: true },
-    { id: 3, title: "Welcome to Peleekings", text: "Your registration code is AS1399", time: "3d ago", unread: false },
+    {
+      id: 1,
+      title: "Assignment Graded",
+      text: "Module 02 Prompt Engineering received 95%",
+      fullMessage: "Congratulations! Your Module 02 Prompt Engineering assignment has been graded by your instructor with a score of 95/100 (Distinction). Your prompt chaining pipelines and Zapier automation workflows demonstrated exceptional practical mastery.",
+      time: "2h ago",
+      unread: true,
+      actionLink: "/dashboard"
+    },
+    {
+      id: 2,
+      title: "New Lesson Available",
+      text: "AI Essentials & Automation: Module 5 unlocked",
+      fullMessage: "Module 5: 'End-to-End Enterprise Automations' is now available in your classroom. In this module, you will build production-grade webhooks, multi-agent chains, and data extractors.",
+      time: "1d ago",
+      unread: true,
+      actionLink: "/course/ai-essentials"
+    },
+    {
+      id: 3,
+      title: "Welcome to Peleekings",
+      text: "Your registration code is AS1399",
+      fullMessage: "Welcome to Peleekings E-Learning Platform! Your account is active with official registration code AS1399. You can use this code for all credential verifications, certificates of completion, and NYSC skill endorsements.",
+      time: "3d ago",
+      unread: false,
+      actionLink: "/dashboard"
+    },
   ]);
+
+  const [activeSection, setActiveSection] = useState("courses");
+  const [selectedNotification, setSelectedNotification] = useState(null);
 
   const navRef = useRef(null);
 
@@ -39,6 +66,27 @@ export default function Navbar() {
     setShowMobileMenu(false);
     setShowMenu(false);
     setShowNotifications(false);
+  }, [location.pathname]);
+
+  // Scroll listener to update active underline between Courses and Learning Paths on landing page
+  useEffect(() => {
+    if (location.pathname !== "/") {
+      return;
+    }
+    function handleScroll() {
+      const learningSection = document.getElementById("learning-paths-section");
+      if (learningSection) {
+        const rect = learningSection.getBoundingClientRect();
+        if (rect.top <= 250 && rect.bottom >= 150) {
+          setActiveSection("learning-paths");
+          return;
+        }
+      }
+      setActiveSection("courses");
+    }
+
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    return () => window.removeEventListener("scroll", handleScroll);
   }, [location.pathname]);
 
   const isLanding = location.pathname === "/";
@@ -92,9 +140,10 @@ export default function Navbar() {
         {/* 2. Courses */}
         <Link
           to="/"
-          className={`nav-item-link ${isActive("/") && !location.hash ? "active" : ""}`}
+          className={`nav-item-link ${isActive("/") && activeSection === "courses" ? "active" : ""}`}
           id="nav-courses"
           onClick={() => {
+            setActiveSection("courses");
             if (location.pathname === "/") {
               const el = document.getElementById("courses-catalog-section");
               if (el) el.scrollIntoView({ behavior: "smooth" });
@@ -107,9 +156,10 @@ export default function Navbar() {
         {/* 3. Learning Paths */}
         <Link
           to="/"
-          className="nav-item-link"
+          className={`nav-item-link ${isActive("/") && activeSection === "learning-paths" ? "active" : ""}`}
           id="nav-learning-paths"
           onClick={(e) => {
+            setActiveSection("learning-paths");
             if (location.pathname !== "/") {
               navigate("/");
               setTimeout(() => {
@@ -243,6 +293,8 @@ export default function Navbar() {
                         }}
                         onClick={() => {
                           setNotifications(prev => prev.map(n => n.id === item.id ? { ...n, unread: false } : n));
+                          setSelectedNotification(item);
+                          setShowNotifications(false);
                         }}
                       >
                         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 2 }}>
@@ -410,9 +462,10 @@ export default function Navbar() {
             )}
             <Link
               to="/"
-              className={`mobile-nav-link ${isActive("/") ? "active" : ""}`}
+              className={`mobile-nav-link ${isActive("/") && activeSection === "courses" ? "active" : ""}`}
               onClick={() => {
                 setShowMobileMenu(false);
+                setActiveSection("courses");
                 document.getElementById("courses-catalog-section")?.scrollIntoView({ behavior: "smooth" });
               }}
             >
@@ -420,9 +473,10 @@ export default function Navbar() {
             </Link>
             <Link
               to="/"
-              className="mobile-nav-link"
+              className={`mobile-nav-link ${isActive("/") && activeSection === "learning-paths" ? "active" : ""}`}
               onClick={(e) => {
                 setShowMobileMenu(false);
+                setActiveSection("learning-paths");
                 if (location.pathname !== "/") {
                   navigate("/");
                   setTimeout(() => {
@@ -534,6 +588,56 @@ export default function Navbar() {
 
             <div style={{ marginTop: 24, textAlign: "right" }}>
               <button className="btn btn-solid-dark" onClick={() => setShowResourcesModal(false)}>
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Notification Detail Modal Dialog ──────────────────────── */}
+      {selectedNotification && (
+        <div className="modal-backdrop-overlay" onClick={() => setSelectedNotification(null)}>
+          <div className="modal-dialog-box" style={{ maxWidth: 480 }} onClick={e => e.stopPropagation()}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <div style={{ width: 40, height: 40, borderRadius: "50%", background: "var(--primary-learner-light)", color: "var(--primary-learner)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.2rem", flexShrink: 0 }}>
+                  🔔
+                </div>
+                <div>
+                  <h3 style={{ fontSize: "1.25rem", fontWeight: 800, color: "var(--text-primary)" }}>{selectedNotification.title}</h3>
+                  <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>{selectedNotification.time}</span>
+                </div>
+              </div>
+              <button
+                className="btn-ghost"
+                onClick={() => setSelectedNotification(null)}
+                style={{ fontSize: "1.2rem", cursor: "pointer", border: "none" }}
+              >
+                ✕
+              </button>
+            </div>
+
+            <div style={{ padding: "16px 0", borderTop: "1px solid var(--border-subtle)", borderBottom: "1px solid var(--border-subtle)", margin: "8px 0 20px" }}>
+              <p style={{ color: "var(--text-secondary)", fontSize: "0.95rem", lineHeight: 1.6 }}>
+                {selectedNotification.fullMessage || selectedNotification.text}
+              </p>
+            </div>
+
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 12 }}>
+              {selectedNotification.actionLink && (
+                <button
+                  className="btn btn-solid-dark btn-sm"
+                  onClick={() => {
+                    const link = selectedNotification.actionLink;
+                    setSelectedNotification(null);
+                    navigate(link);
+                  }}
+                >
+                  View Details &rarr;
+                </button>
+              )}
+              <button className="btn btn-outline btn-sm" onClick={() => setSelectedNotification(null)}>
                 Close
               </button>
             </div>
