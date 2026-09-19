@@ -8,6 +8,7 @@ import Dashboard from "./pages/Dashboard";
 import AdminPanel from "./pages/AdminPanel";
 import CoursePage from "./pages/CoursePage";
 import BecomeInstructor from "./pages/BecomeInstructor";
+import About from "./pages/About";
 import "./index.css";
 
 export default function App() {
@@ -26,6 +27,7 @@ export default function App() {
                 <Navbar />
                 <Routes>
                   <Route path="/" element={<Home />} />
+                  <Route path="/about" element={<About />} />
                   <Route
                     path="/become-instructor"
                     element={

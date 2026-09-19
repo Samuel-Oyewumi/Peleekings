@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { COURSES_CATALOG } from "./Home";
+import { getUserActivity, enrollInCourse, toggleLessonCompletion } from "../contexts/userActivity";
 
 const COURSE_MODULES = [
   {
@@ -39,13 +40,25 @@ export default function CoursePage() {
 
   const courseData = COURSES_CATALOG.find(c => c.id === id) || COURSES_CATALOG[0];
 
+  const userActivity = getUserActivity(currentUser?.uid);
+  const isUserEnrolled = !!userActivity?.enrolledCourses?.some(c => c.id === courseData.id);
+
   // State: enrolled vs classroom view
-  const [isEnrolled, setIsEnrolled] = useState(true);
-  const [viewMode, setViewMode] = useState("classroom"); // "detail" or "classroom"
+  const [isEnrolled, setIsEnrolled] = useState(isUserEnrolled);
+  const [viewMode, setViewMode] = useState(isUserEnrolled ? "classroom" : "detail");
   const [selectedExperience, setSelectedExperience] = useState("online"); // "online" or "hands-on"
   
-  // Classroom lesson state
-  const [modules, setModules] = useState(COURSE_MODULES);
+  // Classroom lesson state with saved progress
+  const completedLessonIds = new Set(userActivity?.completedLessons?.[courseData.id] || ["l1", "l2", "l3"]);
+  const [modules, setModules] = useState(() =>
+    COURSE_MODULES.map(mod => ({
+      ...mod,
+      lessons: mod.lessons.map(les => ({
+        ...les,
+        completed: completedLessonIds.has(les.id)
+      }))
+    }))
+  );
   const [activeLessonId, setActiveLessonId] = useState("l5");
   const [activeTab, setActiveTab] = useState("Overview");
   const [isPlaying, setIsPlaying] = useState(false);
@@ -91,6 +104,7 @@ export default function CoursePage() {
         )
       }))
     );
+    toggleLessonCompletion(currentUser?.uid, courseData.id, lessonId, allLessons.length);
     const lessonObj = allLessons.find(l => l.id === lessonId);
     triggerToast(lessonObj && !lessonObj.completed ? "✓ Lesson marked as complete!" : "Lesson marked as incomplete");
   }
@@ -98,6 +112,7 @@ export default function CoursePage() {
   function handleEnroll(experienceType) {
     setSelectedExperience(experienceType);
     setIsEnrolled(true);
+    enrollInCourse(currentUser?.uid, courseData.id, experienceType);
     triggerToast(`🎉 Successfully enrolled in ${experienceType === "online" ? "Online Classes" : "Hands-on Training"}!`);
     setTimeout(() => setViewMode("classroom"), 600);
   }

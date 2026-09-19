@@ -134,17 +134,9 @@ export default function Navbar() {
 
         {/* 5. About */}
         <Link
-          to="/"
-          className="nav-item-link"
+          to="/about"
+          className={`nav-item-link ${isActive("/about") ? "active" : ""}`}
           id="nav-about"
-          onClick={(e) => {
-            e.preventDefault();
-            if (location.pathname !== "/") navigate("/");
-            setTimeout(() => {
-              const el = document.getElementById("skills-overview");
-              if (el) el.scrollIntoView({ behavior: "smooth" });
-            }, 100);
-          }}
         >
           About
         </Link>
@@ -442,12 +434,9 @@ export default function Navbar() {
               Resources
             </button>
             <Link
-              to="/"
-              className="mobile-nav-link"
-              onClick={() => {
-                setShowMobileMenu(false);
-                document.getElementById("skills-overview")?.scrollIntoView({ behavior: "smooth" });
-              }}
+              to="/about"
+              className={`mobile-nav-link ${isActive("/about") ? "active" : ""}`}
+              onClick={() => setShowMobileMenu(false)}
             >
               About
             </Link>

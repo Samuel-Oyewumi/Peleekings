@@ -1386,3 +1386,323 @@ img {
   }
 }
 
+/* ── About Us Page & Landing Section Styles ─────────────────────────── */
+.about-page-container {
+  min-height: calc(100vh - 68px);
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-surface);
+}
+
+.about-hero-section {
+  background: linear-gradient(180deg, #FFFFFF 0%, #F8FAFC 100%);
+  border-bottom: 1px solid var(--border-light);
+  padding: 64px 24px;
+  text-align: center;
+}
+
+.about-hero-inner {
+  max-width: 860px;
+  margin: 0 auto;
+}
+
+.about-badge-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: #EFF6FF;
+  color: var(--primary-learner);
+  border: 1px solid rgba(37, 99, 235, 0.2);
+  font-size: 0.775rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  padding: 6px 14px;
+  border-radius: 99px;
+  margin-bottom: 20px;
+}
+
+.about-badge-pill .badge-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--primary-learner);
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0% { transform: scale(0.95); opacity: 0.8; }
+  50% { transform: scale(1.25); opacity: 1; }
+  100% { transform: scale(0.95); opacity: 0.8; }
+}
+
+.about-hero-title {
+  font-size: 2.85rem;
+  font-weight: 900;
+  letter-spacing: -0.03em;
+  color: var(--text-primary);
+  margin-bottom: 16px;
+}
+
+.about-hero-lead {
+  font-size: 1.2rem;
+  line-height: 1.6;
+  color: var(--text-secondary);
+  font-weight: 400;
+}
+
+.about-content-section {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 60px 24px 80px;
+  width: 100%;
+}
+
+.about-content-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 28px;
+  margin-bottom: 48px;
+}
+
+.about-card {
+  background: #FFFFFF;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-lg);
+  padding: 36px;
+  box-shadow: var(--shadow-sm);
+  transition: var(--transition);
+}
+
+.about-card:hover {
+  box-shadow: var(--shadow-md);
+  border-color: rgba(37, 99, 235, 0.3);
+}
+
+.about-card-icon-wrap {
+  width: 52px;
+  height: 52px;
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 20px;
+}
+
+.about-card-heading {
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: var(--text-primary);
+  margin-bottom: 12px;
+}
+
+.about-card-text {
+  font-size: 0.975rem;
+  line-height: 1.65;
+  color: var(--text-secondary);
+}
+
+.impact-stat-bubble {
+  display: inline-flex;
+  flex-direction: column;
+  background: linear-gradient(135deg, #EFF6FF 0%, #DBEAFE 100%);
+  border: 1px solid rgba(37, 99, 235, 0.2);
+  padding: 16px 24px;
+  border-radius: var(--radius-md);
+}
+
+.impact-number {
+  font-size: 2.75rem;
+  font-weight: 900;
+  color: var(--primary-learner);
+  line-height: 1;
+}
+
+.impact-label {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-top: 4px;
+}
+
+.impact-tags-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 24px;
+}
+
+.impact-tag {
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 6px 12px;
+  background: #F1F5F9;
+  color: var(--text-secondary);
+  border-radius: 99px;
+  border: 1px solid var(--border-subtle);
+}
+
+/* Philosophy Banner */
+.about-philosophy-banner {
+  background: linear-gradient(135deg, #0F172A 0%, #1E293B 100%);
+  color: #FFFFFF;
+  border-radius: var(--radius-lg);
+  padding: 48px 36px;
+  margin-bottom: 48px;
+  box-shadow: var(--shadow-lg);
+}
+
+.philosophy-header {
+  text-align: center;
+  max-width: 720px;
+  margin: 0 auto 36px;
+}
+
+.philosophy-title {
+  font-size: 1.85rem;
+  font-weight: 800;
+  margin-bottom: 10px;
+  color: #FFFFFF;
+}
+
+.philosophy-subtitle {
+  font-size: 1.05rem;
+  line-height: 1.6;
+  color: #94A3B8;
+}
+
+.philosophy-pillars-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 20px;
+}
+
+.philosophy-pillar-card {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(8px);
+  border-radius: var(--radius-md);
+  padding: 24px;
+  text-align: center;
+  transition: var(--transition);
+}
+
+.philosophy-pillar-card:hover {
+  background: rgba(255, 255, 255, 0.1);
+  transform: translateY(-2px);
+}
+
+.pillar-icon {
+  font-size: 2rem;
+  margin-bottom: 12px;
+}
+
+.philosophy-pillar-card h4 {
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: #FFFFFF;
+  margin-bottom: 8px;
+}
+
+.philosophy-pillar-card p {
+  font-size: 0.9rem;
+  line-height: 1.5;
+  color: #CBD5E1;
+}
+
+/* Dual CTA Card */
+.about-cta-section {
+  text-align: center;
+}
+
+.about-cta-card {
+  background: #FFFFFF;
+  border: 2px solid var(--border-light);
+  border-radius: var(--radius-lg);
+  padding: 48px 32px;
+  box-shadow: var(--shadow-md);
+}
+
+.cta-headline {
+  font-size: 1.85rem;
+  font-weight: 800;
+  color: var(--text-primary);
+  margin-bottom: 8px;
+}
+
+.cta-subhead {
+  font-size: 1.05rem;
+  color: var(--text-secondary);
+  max-width: 620px;
+  margin: 0 auto 28px;
+}
+
+.about-btn-row {
+  display: flex;
+  justify-content: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+/* Landing Page About Section */
+.landing-about-section {
+  background: #FFFFFF;
+  border-top: 1px solid var(--border-light);
+  border-bottom: 1px solid var(--border-light);
+  padding: 64px 24px;
+}
+
+.landing-about-inner {
+  max-width: 1120px;
+  margin: 0 auto;
+}
+
+.landing-about-header {
+  text-align: center;
+  margin-bottom: 40px;
+}
+
+.landing-about-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 24px;
+}
+
+.landing-about-card {
+  background: #F8FAFC;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  padding: 28px 24px;
+  display: flex;
+  flex-direction: column;
+}
+
+.landing-about-card-badge {
+  font-size: 0.95rem;
+  font-weight: 800;
+  color: var(--text-primary);
+  margin-bottom: 8px;
+}
+
+/* Milestone Modal Responsive */
+.milestone-modal-box {
+  max-width: 520px;
+}
+
+@media (max-width: 860px) {
+  .about-content-grid {
+    grid-template-columns: 1fr;
+  }
+  .philosophy-pillars-grid {
+    grid-template-columns: 1fr;
+  }
+  .landing-about-grid {
+    grid-template-columns: 1fr;
+  }
+  .about-hero-title {
+    font-size: 2.2rem;
+  }
+}
+
+

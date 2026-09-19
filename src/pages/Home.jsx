@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
+import { getUserActivity } from "../contexts/userActivity";
 
 export const COURSES_CATALOG = [
   {
@@ -162,6 +163,26 @@ export default function Home() {
   const [searchQuery, setSearchQuery] = useState("");
   const [showPreviewMockup, setShowPreviewMockup] = useState(true);
   const [showHowItWorksModal, setShowHowItWorksModal] = useState(false);
+  const [userActivity, setUserActivity] = useState(() => getUserActivity(currentUser?.uid));
+
+  useEffect(() => {
+    setUserActivity(getUserActivity(currentUser?.uid));
+    function handleUpdate(e) {
+      if (e.detail?.userId === currentUser?.uid) {
+        setUserActivity(e.detail.data);
+      }
+    }
+    window.addEventListener("peleekings_activity_updated", handleUpdate);
+    return () => window.removeEventListener("peleekings_activity_updated", handleUpdate);
+  }, [currentUser]);
+
+  const activeCourse = userActivity?.enrolledCourses?.[0] || {
+    id: "ai-essentials",
+    title: "AI Essentials & Automation",
+    progress: 64,
+    currentModule: "Module 4 of 10",
+    image: "https://images.unsplash.com/photo-1677442136019-21780ecad995?w=500&auto=format&fit=crop&q=80"
+  };
 
   const filteredCourses = COURSES_CATALOG.filter(course => {
     const matchesFilter = activeFilter === "All" || course.category === activeFilter;
@@ -235,27 +256,27 @@ export default function Home() {
 
               <div className="mockup-continue-card">
                 <div className="mockup-course-thumb">
-                  AI
+                  {activeCourse.title.slice(0, 2).toUpperCase()}
                 </div>
                 <div style={{ flex: 1 }}>
                   <div style={{ fontWeight: 700, fontSize: "0.95rem", color: "var(--text-primary)", marginBottom: 2 }}>
-                    AI Essentials &amp; Automation
+                    {activeCourse.title}
                   </div>
                   <div style={{ fontSize: "0.8rem", color: "var(--text-muted)", marginBottom: 8 }}>
-                    Module 4 of 10
+                    {activeCourse.currentModule || "In Progress"}
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                     <div style={{ flex: 1, height: 6, background: "#E2E8F0", borderRadius: 99, overflow: "hidden" }}>
-                      <div style={{ width: "64%", height: "100%", background: "var(--primary-learner)", borderRadius: 99 }} />
+                      <div style={{ width: `${activeCourse.progress || 0}%`, height: "100%", background: "var(--primary-learner)", borderRadius: 99 }} />
                     </div>
                     <span style={{ fontSize: "0.775rem", fontWeight: 700, color: "var(--text-secondary)" }}>
-                      64%
+                      {activeCourse.progress || 0}%
                     </span>
                   </div>
                 </div>
                 <button
                   className="btn btn-solid-dark btn-sm"
-                  onClick={() => navigate("/course/ai-essentials")}
+                  onClick={() => navigate(`/course/${activeCourse.id}`)}
                 >
                   Continue &rarr;
                 </button>
@@ -451,6 +472,51 @@ export default function Home() {
               </div>
             </div>
           ))}
+        </div>
+      </section>
+
+      {/* ── About Us Section (Landing Page Feature) ───────────────── */}
+      <section className="landing-about-section" id="about-section">
+        <div className="landing-about-inner">
+          <div className="landing-about-header">
+            <span className="pill-badge pill-tech">ABOUT PELEEKINGS</span>
+            <h2 style={{ fontSize: "2rem", fontWeight: 800, margin: "12px 0 8px" }}>
+              Empowerment &amp; Celebration Platform
+            </h2>
+            <p style={{ color: "var(--text-secondary)", fontSize: "1.05rem", maxWidth: 760, margin: "0 auto", lineHeight: 1.6 }}>
+              We are an empowerment and celebration platform dedicated to helping individuals and organizations celebrate meaningful milestones while preparing for the opportunities ahead.
+            </p>
+          </div>
+
+          <div className="landing-about-grid">
+            <div className="landing-about-card">
+              <div className="landing-about-card-badge">🎯 Our Mission</div>
+              <p style={{ color: "var(--text-secondary)", fontSize: "0.95rem", lineHeight: 1.6, marginTop: 8 }}>
+                Equipping Corps Members and young people with practical, monetizable skills that create pathways to financial independence, career growth, and meaningful opportunities.
+              </p>
+            </div>
+
+            <div className="landing-about-card" style={{ background: "linear-gradient(135deg, rgba(37,99,235,0.05) 0%, rgba(37,99,235,0.12) 100%)", border: "1px solid rgba(37,99,235,0.2)" }}>
+              <div style={{ fontSize: "2.2rem", fontWeight: 900, color: "var(--primary-learner)", lineHeight: 1 }}>20+</div>
+              <div style={{ fontSize: "0.9rem", fontWeight: 700, color: "var(--text-primary)", margin: "4px 0 8px" }}>Corps Members Trained</div>
+              <p style={{ color: "var(--text-secondary)", fontSize: "0.85rem", lineHeight: 1.5 }}>
+                Successfully trained in digital and professional skills, opening doors to client connections and career advancement.
+              </p>
+            </div>
+
+            <div className="landing-about-card">
+              <div className="landing-about-card-badge">✨ Core Philosophy</div>
+              <p style={{ color: "var(--text-secondary)", fontSize: "0.95rem", lineHeight: 1.6, fontStyle: "italic", marginTop: 8 }}>
+                "Your growth deserves to be celebrated. Your skills deserve to be valued. Your next season deserves preparation."
+              </p>
+            </div>
+          </div>
+
+          <div style={{ textAlign: "center", marginTop: 32 }}>
+            <Link to="/about" className="btn btn-solid-dark btn-lg" style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+              Learn More About Us &rarr;
+            </Link>
+          </div>
         </div>
       </section>
 

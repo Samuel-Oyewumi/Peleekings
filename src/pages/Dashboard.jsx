@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
+import { getUserActivity } from "../contexts/userActivity";
 
 export default function Dashboard() {
   const { currentUser, userProfile, logout } = useAuth();
@@ -37,35 +38,23 @@ export default function Dashboard() {
     setTimeout(() => setToastMessage(""), 3500);
   }
 
-  // Active courses enrolled
-  const enrolledCourses = [
-    {
-      id: "ai-essentials",
-      title: "AI Essentials & Automation",
-      type: "Online",
-      progress: 66,
-      currentModule: "Module 4 of 10",
-      image: "https://images.unsplash.com/photo-1677442136019-21780ecad995?w=500&auto=format&fit=crop&q=80",
-    },
-    {
-      id: "graphic-design",
-      title: "Graphic Design Fundamentals",
-      type: "Hands-on",
-      progress: 32,
-      currentModule: "Module 3 of 12",
-      image: "https://images.unsplash.com/photo-1626785774573-4b799315345d?w=500&auto=format&fit=crop&q=80",
-    },
-    {
-      id: "social-media",
-      title: "Social Media Management",
-      type: "Online",
-      progress: 0,
-      currentModule: "Module 1 of 10",
-      image: "https://images.unsplash.com/photo-1611162617474-5b21e879e113?w=500&auto=format&fit=crop&q=80",
-    }
-  ];
+  const [userActivity, setUserActivity] = useState(() => getUserActivity(currentUser?.uid));
 
-  const weeklyActivityData = [
+  useEffect(() => {
+    setUserActivity(getUserActivity(currentUser?.uid));
+    function handleUpdate(e) {
+      if (e.detail?.userId === currentUser?.uid) {
+        setUserActivity(e.detail.data);
+      }
+    }
+    window.addEventListener("peleekings_activity_updated", handleUpdate);
+    return () => window.removeEventListener("peleekings_activity_updated", handleUpdate);
+  }, [currentUser]);
+
+  // Active courses enrolled from user activity
+  const enrolledCourses = userActivity?.enrolledCourses || [];
+
+  const weeklyActivityData = userActivity?.weeklyActivity || [
     { day: "Mon", hours: 45, label: "45m" },
     { day: "Tue", hours: 60, label: "1h" },
     { day: "Wed", hours: 30, label: "30m" },
@@ -227,56 +216,68 @@ export default function Dashboard() {
             {/* Top Row: Continue Learning & Weekly Learning Activity */}
             <div className="dashboard-top-widgets-grid">
               {/* Continue Learning Widget Card */}
-              <div className="continue-learning-widget-card">
-                <div
-                  style={{
-                    width: 90,
-                    height: 90,
-                    borderRadius: "var(--radius-md)",
-                    overflow: "hidden",
-                    flexShrink: 0,
-                    background: "#0F172A",
-                    position: "relative"
-                  }}
-                >
-                  <img
-                    src={enrolledCourses[0].image}
-                    alt="Course Thumbnail"
-                    style={{ width: "100%", height: "100%", objectFit: "cover" }}
-                  />
-                  <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.3)", display: "flex", alignItems: "center", justifyContent: "center", color: "#FFFFFF", fontWeight: 800 }}>
-                    AI
+              {enrolledCourses.length > 0 ? (
+                <div className="continue-learning-widget-card">
+                  <div
+                    style={{
+                      width: 90,
+                      height: 90,
+                      borderRadius: "var(--radius-md)",
+                      overflow: "hidden",
+                      flexShrink: 0,
+                      background: "#0F172A",
+                      position: "relative"
+                    }}
+                  >
+                    <img
+                      src={enrolledCourses[0].image}
+                      alt="Course Thumbnail"
+                      style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                    />
+                    <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.3)", display: "flex", alignItems: "center", justifyContent: "center", color: "#FFFFFF", fontWeight: 800 }}>
+                      {enrolledCourses[0].title.slice(0, 2).toUpperCase()}
+                    </div>
+                  </div>
+
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: "0.75rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--text-muted)", marginBottom: 4 }}>
+                      Continue Learning
+                    </div>
+                    <h3 style={{ fontSize: "1.2rem", fontWeight: 700, marginBottom: 4 }}>
+                      {enrolledCourses[0].title}
+                    </h3>
+                    <div style={{ fontSize: "0.85rem", color: "var(--text-muted)", marginBottom: 12 }}>
+                      {enrolledCourses[0].currentModule}
+                    </div>
+
+                    <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
+                      <div style={{ flex: 1, height: 7, background: "#F1F5F9", borderRadius: 99, overflow: "hidden" }}>
+                        <div style={{ width: `${enrolledCourses[0].progress}%`, height: "100%", background: "var(--primary-learner)", borderRadius: 99 }} />
+                      </div>
+                      <span style={{ fontSize: "0.85rem", fontWeight: 700, color: "var(--text-primary)" }}>
+                        {enrolledCourses[0].progress}%
+                      </span>
+                    </div>
+
+                    <button
+                      className="btn btn-solid-dark btn-sm"
+                      onClick={() => navigate(`/course/${enrolledCourses[0].id}`)}
+                    >
+                      Continue Learning &rarr;
+                    </button>
                   </div>
                 </div>
-
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: "0.75rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--text-muted)", marginBottom: 4 }}>
-                    Continue Learning
+              ) : (
+                <div className="continue-learning-widget-card" style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                  <div>
+                    <h3 style={{ fontSize: "1.1rem", fontWeight: 700, marginBottom: 4 }}>Ready to start learning?</h3>
+                    <p style={{ color: "var(--text-muted)", fontSize: "0.85rem" }}>Enroll in your first course to build practical, monetizable skills.</p>
                   </div>
-                  <h3 style={{ fontSize: "1.2rem", fontWeight: 700, marginBottom: 4 }}>
-                    {enrolledCourses[0].title}
-                  </h3>
-                  <div style={{ fontSize: "0.85rem", color: "var(--text-muted)", marginBottom: 12 }}>
-                    {enrolledCourses[0].currentModule}
-                  </div>
-
-                  <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
-                    <div style={{ flex: 1, height: 7, background: "#F1F5F9", borderRadius: 99, overflow: "hidden" }}>
-                      <div style={{ width: `${enrolledCourses[0].progress}%`, height: "100%", background: "var(--primary-learner)", borderRadius: 99 }} />
-                    </div>
-                    <span style={{ fontSize: "0.85rem", fontWeight: 700, color: "var(--text-primary)" }}>
-                      {enrolledCourses[0].progress}%
-                    </span>
-                  </div>
-
-                  <button
-                    className="btn btn-solid-dark btn-sm"
-                    onClick={() => navigate(`/course/${enrolledCourses[0].id}`)}
-                  >
-                    Continue Learning &rarr;
+                  <button className="btn btn-solid-dark btn-sm" onClick={() => navigate("/")}>
+                    Explore Courses &rarr;
                   </button>
                 </div>
-              </div>
+              )}
 
               {/* Weekly Learning Activity Chart Card */}
               <div className="activity-chart-widget-card">
