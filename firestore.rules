@@ -59,6 +59,23 @@ service cloud.firestore {
         allow read: if isSignedIn() && (isCoursePublished(courseId) || isAdmin());
         allow create, update, delete: if isAdmin();
       }
+
+      // ── Course Announcements Subcollection ─────────────────────────
+      // Signed-in users can read; tutors and admins can create/update/delete
+      match /announcements/{announcementId} {
+        allow read: if isSignedIn();
+        allow create, update, delete: if isAdmin() || isTutor();
+      }
+
+      // ── Course Comments Subcollection ──────────────────────────────
+      // Signed-in users can read and post their own comments;
+      // owners or admins can delete
+      match /comments/{commentId} {
+        allow read: if isSignedIn();
+        allow create: if isSignedIn() && request.resource.data.uid == request.auth.uid;
+        allow update: if isSignedIn() && resource.data.uid == request.auth.uid;
+        allow delete: if isAdmin() || (isSignedIn() && resource.data.uid == request.auth.uid);
+      }
     }
 
     // ── 3. Enrollments Collection ─────────────────────────────────
@@ -136,7 +153,36 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
-    // ── 6. Default Deny ───────────────────────────────────────────
+    // ── 6. Audit Logs Collection ──────────────────────────────────
+    // Only admins can read audit logs. Writes are performed by Cloud Functions (Admin SDK) or admins.
+    match /auditLogs/{logId} {
+      allow read: if isAdmin();
+      allow write: if isAdmin();
+    }
+
+    // ── 7. User Notifications Subcollection ───────────────────────
+    // Users can read and update (mark as read) their own notifications.
+    // Admins and tutors can create notifications for any user (e.g., grade alerts).
+    // Cloud Functions (Admin SDK) bypass these rules entirely.
+    match /users/{uid}/notifications/{notifId} {
+      allow read, update: if isOwner(uid);
+      allow create: if isAdmin() || isTutor();
+      allow delete: if isOwner(uid) || isAdmin();
+    }
+
+    // ── 7. Resources Collection & Course Resources ─────────────────
+    // Anyone signed in can read resources. Admins and tutors can create, update, or delete.
+    match /resources/{resourceId} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if isAdmin() || isTutor();
+    }
+
+    match /courses/{courseId}/resources/{resourceId} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if isAdmin() || isTutor();
+    }
+
+    // ── 8. Default Deny ───────────────────────────────────────────
     // Deny all reads/writes by default for any unspecified path
     match /{document=**} {
       allow read, write: if false;

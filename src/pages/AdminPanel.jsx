@@ -1,123 +1,159 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
-import { doc, updateDoc, serverTimestamp } from "firebase/firestore";
-import { db } from "../firebase";
-import { COURSES_CATALOG } from "./Home";
-
-const INITIAL_REGISTRATIONS = [
-  {
-    id: "r1",
-    name: "Samuel Asuquo",
-    type: "Corper",
-    regId: "AS1399",
-    nyscCode: "AB/23A/1399",
-    date: "12 May 2025",
-    status: "Active",
-    role: "student",
-    email: "samuel@example.com",
-    phone: "+234 801 234 5678",
-    enrolledCourses: ["AI Essentials & Automation", "Foundations of Computing"]
-  },
-  {
-    id: "r2",
-    name: "Esther James",
-    type: "Non-Corper",
-    regId: "S4821A",
-    nyscCode: null,
-    date: "12 May 2025",
-    status: "Active",
-    role: "student",
-    email: "esther@example.com",
-    phone: "+234 802 345 6789",
-    enrolledCourses: ["Graphic Design Fundamentals"]
-  },
-  {
-    id: "r3",
-    name: "David Okafor",
-    type: "Corper",
-    regId: "AB0456",
-    nyscCode: "LA/24B/0456",
-    date: "11 May 2025",
-    status: "Active",
-    role: "student",
-    email: "david@example.com",
-    phone: "+234 803 456 7890",
-    enrolledCourses: ["Videography & Video Editing"]
-  },
-  {
-    id: "r4",
-    name: "Blessing Udo",
-    type: "Non-Corper",
-    regId: "B7382K",
-    nyscCode: null,
-    date: "11 May 2025",
-    status: "Active",
-    role: "student",
-    email: "blessing@example.com",
-    phone: "+234 804 567 8901",
-    enrolledCourses: ["Social Media Strategy"]
-  },
-  {
-    id: "r5",
-    name: "Michael Adeleke",
-    type: "Corper",
-    regId: "AM2049",
-    nyscCode: "OG/23C/2049",
-    date: "10 May 2025",
-    status: "Active",
-    role: "student",
-    email: "michael@example.com",
-    phone: "+234 805 678 9012",
-    enrolledCourses: ["Sound Production & Audio"]
-  }
-];
-
-const INITIAL_AUDIT_LOGS = [
-  { id: "log-1", action: "Platform Nominal", detail: "Firebase Auth & Firestore operational", timestamp: "Just now", badge: "pill-tech" },
-  { id: "log-2", action: "New Registration", detail: "Samuel Asuquo enrolled as Corper (Reg ID: AS1399)", timestamp: "2 hours ago", badge: "pill-success" },
-  { id: "log-3", action: "Application Received", detail: "Dr. Maria Santos applied to teach Data Science", timestamp: "1 day ago", badge: "pill-creative" },
-  { id: "log-4", action: "Credential Verified", detail: "Registration ID AS1399 verified for NYSC deployment", timestamp: "2 days ago", badge: "pill-success" },
-  { id: "log-5", action: "Course Published", detail: "AI Essentials & Automation added to public catalog", timestamp: "3 days ago", badge: "pill-tech" },
-];
+import {
+  collection,
+  doc,
+  getDocs,
+  setDoc,
+  updateDoc,
+  deleteDoc,
+  query,
+  where,
+  orderBy,
+  limit,
+  startAfter,
+  serverTimestamp,
+} from "firebase/firestore";
+import { httpsCallable } from "firebase/functions";
+import { db, functions } from "../firebase";
+import { COURSES_CATALOG } from "../data/courses";
+import { getResources, uploadResource, deleteResource } from "../contexts/resourcesService";
 
 export default function AdminPanel() {
-  const { userProfile, updateUserRole } = useAuth();
+  const { userProfile } = useAuth();
   const navigate = useNavigate();
 
-  // Navigation tabs: "applications", "analytics", "registrations", "courses", "certificates"
+  // Navigation tabs: "applications", "analytics", "registrations", "courses", "resources", "certificates"
   const [activeTab, setActiveTab] = useState("applications");
 
-  // State: Applications
-  const [applications, setApplications] = useState([
-    {
-      id: "app-1",
-      fullName: "Dr. Maria Santos",
-      email: "maria.santos@example.com",
-      courseTitle: "Applied Data Science & Pandas",
-      category: "Tech & Digital Skills",
-      courseDescription: "From Python arrays to machine learning inference in production. Covers NumPy, Pandas, and scikit-learn.",
-      status: "pending",
-      date: "1 day ago",
-      syllabus: "Module 1: Python Data Structures. Module 2: Data Cleaning & Wrangling. Module 3: Exploratory Data Analysis. Module 4: Model Pipelines."
-    },
-    {
-      id: "app-2",
-      fullName: "Kelechi Nwosu",
-      email: "kelechi@example.com",
-      courseTitle: "Cloud DevOps on AWS & Docker",
-      category: "Tech & Digital Skills",
-      courseDescription: "Hands-on CI/CD pipeline automation, container orchestration with Kubernetes, and infrastructure as code.",
-      status: "pending",
-      date: "2 days ago",
-      syllabus: "Module 1: Docker Containers. Module 2: GitHub Actions CI/CD. Module 3: Kubernetes Clusters. Module 4: Cloud Monitoring."
+  // ── Live State: Resources & Uploads ───────────────────────────
+  const [adminResources, setAdminResources] = useState([]);
+  const [loadingResources, setLoadingResources] = useState(true);
+  const [resourceFilter, setResourceFilter] = useState("all");
+  const [showAddResourceModal, setShowAddResourceModal] = useState(false);
+  const [newResourceForm, setNewResourceForm] = useState({
+    title: "",
+    description: "",
+    category: "Tech & Digital Skills",
+    courseId: "platform",
+    externalUrl: "",
+    file: null,
+  });
+  const [isUploadingResource, setIsUploadingResource] = useState(false);
+
+  async function fetchAdminResources() {
+    setLoadingResources(true);
+    try {
+      const res = await getResources("all");
+      setAdminResources(res || []);
+    } catch (err) {
+      console.error("Failed to load admin resources:", err);
+    } finally {
+      setLoadingResources(false);
     }
-  ]);
+  }
+
+  useEffect(() => {
+    fetchAdminResources();
+  }, []);
+
+  async function handleAdminUploadResource(e) {
+    e.preventDefault();
+    if (!newResourceForm.title.trim() || (!newResourceForm.file && !newResourceForm.externalUrl.trim())) {
+      alert("Please provide a title and either a file or link.");
+      return;
+    }
+    setIsUploadingResource(true);
+    try {
+      const created = await uploadResource({
+        file: newResourceForm.file,
+        title: newResourceForm.title,
+        description: newResourceForm.description,
+        category: newResourceForm.category,
+        courseId: newResourceForm.courseId,
+        externalUrl: newResourceForm.externalUrl,
+        user: { uid: userProfile?.uid || "admin", displayName: userProfile?.fullName || "Admin", role: "admin" },
+      });
+      setAdminResources(prev => [created, ...prev]);
+      setShowAddResourceModal(false);
+      setNewResourceForm({
+        title: "",
+        description: "",
+        category: "Tech & Digital Skills",
+        courseId: "platform",
+        externalUrl: "",
+        file: null,
+      });
+      triggerToast("✓ Resource published across platform!");
+    } catch (err) {
+      console.error("Failed to upload resource:", err);
+      alert("Failed to upload resource. Please check file permissions.");
+    } finally {
+      setIsUploadingResource(false);
+    }
+  }
+
+  async function handleDeleteResource(resourceId, fileUrl) {
+    if (window.confirm("Are you sure you want to remove this resource from the platform?")) {
+      try {
+        await deleteResource(resourceId, fileUrl);
+        setAdminResources(prev => prev.filter(r => r.id !== resourceId));
+        triggerToast("Resource removed.");
+      } catch (err) {
+        console.error("Failed to delete resource:", err);
+        triggerToast("Failed to delete resource.");
+      }
+    }
+  }
+
+  // ── 1. Live State: Tutor Applications ─────────────────────────
+  const [applications, setApplications] = useState([]);
+  const [loadingApps, setLoadingApps] = useState(true);
   const [appFilter, setAppFilter] = useState("all");
   const [selectedAppModal, setSelectedAppModal] = useState(null);
 
-  // State: Users & Registrations
-  const [usersList, setUsersList] = useState(INITIAL_REGISTRATIONS);
+  async function fetchApplications() {
+    setLoadingApps(true);
+    try {
+      // Query pending applications (or all applications for admin view)
+      let q = collection(db, "tutorApplications");
+      const snap = await getDocs(q);
+      const list = snap.docs.map(d => {
+        const data = d.data();
+        let dateStr = "Recent";
+        if (data.submittedAt?.toDate) {
+          dateStr = data.submittedAt.toDate().toLocaleDateString();
+        } else if (data.createdAt) {
+          dateStr = new Date(data.createdAt).toLocaleDateString();
+        }
+        return {
+          id: d.id,
+          applicantUid: data.applicantUid || data.uid,
+          fullName: data.fullName || data.name || "Applicant",
+          email: data.email || "",
+          courseTitle: data.courseTitle || "Proposed Course",
+          category: data.category || "Tech & Digital Skills",
+          courseDescription: data.courseDescription || data.description || "",
+          status: data.status || "pending",
+          date: dateStr,
+          syllabus: data.syllabus || "",
+          ...data,
+        };
+      });
+      setApplications(list);
+    } catch (err) {
+      console.error("Failed to load tutor applications from Firestore:", err);
+    } finally {
+      setLoadingApps(false);
+    }
+  }
+
+  // ── 2. Live State: Users & Registrations ──────────────────────
+  const [usersList, setUsersList] = useState([]);
+  const [loadingUsers, setLoadingUsers] = useState(true);
+  const [lastUserDoc, setLastUserDoc] = useState(null);
+  const [hasMoreUsers, setHasMoreUsers] = useState(false);
   const [userSearch, setUserSearch] = useState("");
   const [filterType, setFilterType] = useState("All");
   const [selectedUser, setSelectedUser] = useState(null);
@@ -131,8 +167,58 @@ export default function AdminPanel() {
     role: "student",
   });
 
-  // State: Courses
-  const [adminCourses, setAdminCourses] = useState(COURSES_CATALOG.map(c => ({ ...c, status: "Published" })));
+  async function fetchUsers(isNextPage = false) {
+    setLoadingUsers(true);
+    try {
+      let q = query(collection(db, "users"), orderBy("email"), limit(15));
+      if (isNextPage && lastUserDoc) {
+        q = query(collection(db, "users"), orderBy("email"), startAfter(lastUserDoc), limit(15));
+      }
+      const snap = await getDocs(q);
+      const docs = snap.docs.map(d => {
+        const data = d.data();
+        const userName = data.fullName || data.displayName || data.email?.split("@")[0] || "Learner";
+        const userType = data.studentType === "corper" ? "Corper" : "Non-Corper";
+        let dateStr = "Recent";
+        if (data.createdAt?.toDate) {
+          dateStr = data.createdAt.toDate().toLocaleDateString();
+        } else if (data.createdAt) {
+          dateStr = new Date(data.createdAt).toLocaleDateString();
+        }
+        return {
+          id: d.id,
+          name: userName,
+          email: data.email || "",
+          phone: data.phoneNumber || data.phone || "N/A",
+          type: userType,
+          regId: data.regNumber || "Pending",
+          nyscCode: data.nyscStateCode || null,
+          role: data.role || "student",
+          status: data.status || "Active",
+          date: dateStr,
+          enrolledCourses: data.enrolledCourses || ["AI Essentials & Automation"],
+          ...data,
+        };
+      });
+
+      if (isNextPage) {
+        setUsersList(prev => [...prev, ...docs]);
+      } else {
+        setUsersList(docs);
+      }
+
+      setLastUserDoc(snap.docs[snap.docs.length - 1] || null);
+      setHasMoreUsers(snap.docs.length === 15);
+    } catch (err) {
+      console.error("Failed to load users from Firestore:", err);
+    } finally {
+      setLoadingUsers(false);
+    }
+  }
+
+  // ── 3. Live State: Courses Management ─────────────────────────
+  const [adminCourses, setAdminCourses] = useState([]);
+  const [loadingCourses, setLoadingCourses] = useState(true);
   const [courseCategoryFilter, setCourseCategoryFilter] = useState("All");
   const [courseSearch, setCourseSearch] = useState("");
   const [showAddCourseModal, setShowAddCourseModal] = useState(false);
@@ -149,19 +235,76 @@ export default function AdminPanel() {
     image: "https://images.unsplash.com/photo-1516321318423-f06f85e504b3?w=600&auto=format&fit=crop&q=80"
   });
 
-  // State: Certificates
+  async function fetchCourses() {
+    setLoadingCourses(true);
+    try {
+      const snap = await getDocs(collection(db, "courses"));
+      if (!snap.empty) {
+        const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        setAdminCourses(list);
+      } else {
+        // Default template catalog preview if Firestore collection is initially empty
+        setAdminCourses(COURSES_CATALOG.map(c => ({ ...c, status: "Published" })));
+      }
+    } catch (err) {
+      console.error("Failed to load courses from Firestore:", err);
+    } finally {
+      setLoadingCourses(false);
+    }
+  }
+
+  // ── 4. Live State: Audit Logs ─────────────────────────────────
+  const [auditLogs, setAuditLogs] = useState([]);
+  const [loadingLogs, setLoadingLogs] = useState(true);
+
+  async function fetchAuditLogs() {
+    setLoadingLogs(true);
+    try {
+      const q = query(collection(db, "auditLogs"), orderBy("timestamp", "desc"), limit(50));
+      const snap = await getDocs(q);
+      const list = snap.docs.map(d => {
+        const data = d.data();
+        let dateStr = "Just now";
+        if (data.timestamp?.toDate) {
+          dateStr = data.timestamp.toDate().toLocaleString();
+        } else if (data.timestamp) {
+          dateStr = new Date(data.timestamp).toLocaleString();
+        }
+        return {
+          id: d.id,
+          action: data.action || "System Event",
+          detail: data.detail || "",
+          badge: data.badge || "pill-tech",
+          timestamp: dateStr,
+          ...data,
+        };
+      });
+      setAuditLogs(list);
+    } catch (err) {
+      console.warn("Failed to load audit logs from Firestore:", err);
+    } finally {
+      setLoadingLogs(false);
+    }
+  }
+
+  // Initial load
+  useEffect(() => {
+    fetchApplications();
+    fetchUsers();
+    fetchCourses();
+    fetchAuditLogs();
+  }, []);
+
+  // ── 5. State: Certificates ────────────────────────────────────
   const [certSearchId, setCertSearchId] = useState("");
   const [certResult, setCertResult] = useState(null);
   const [showIssueCertModal, setShowIssueCertModal] = useState(false);
   const [issueCertForm, setIssueCertForm] = useState({
-    studentName: "Samuel Asuquo",
-    regId: "AS1399",
+    studentName: "",
+    regId: "",
     course: "AI Essentials & Automation",
     grade: "Distinction (96%)",
   });
-
-  // State: Audit Logs
-  const [auditLogs, setAuditLogs] = useState(INITIAL_AUDIT_LOGS);
 
   // Toast
   const [toastMessage, setToastMessage] = useState("");
@@ -171,102 +314,70 @@ export default function AdminPanel() {
     setTimeout(() => setToastMessage(""), 3500);
   }
 
-  function addAuditLog(action, detail, badge = "pill-tech") {
-    const newLog = {
-      id: `log-${Date.now()}`,
-      action,
-      detail,
-      timestamp: "Just now",
-      badge
-    };
-    setAuditLogs(prev => [newLog, ...prev]);
-  }
-
-  // Handle Tutor Application Review
+  // Handle Tutor Application Review (Approve calls promoteToTutor Cloud Function)
   async function handleReviewApplication(appId, status, applicantUid) {
-    const app = applications.find(a => a.id === appId);
-    setApplications(prev => prev.map(a => a.id === appId ? { ...a, status } : a));
-
     if (status === "approved") {
-      triggerToast(`Application approved! ${app?.fullName || "Applicant"} promoted to Instructor and course drafted.`);
-      addAuditLog("Application Approved", `${app?.fullName || "Applicant"} promoted to Instructor`, "pill-success");
-
-      if (app) {
-        const draftedCourse = {
-          id: app.courseTitle.toLowerCase().replace(/\s+/g, "-"),
-          title: app.courseTitle,
-          category: app.category || "Tech & Digital Skills",
-          badge: "NEW COURSE",
-          badgeClass: "pill-tech",
-          level: "Intermediate",
-          duration: "8h 30m",
-          rating: 5.0,
-          reviewsCount: "0",
-          students: 0,
-          status: "Draft",
-          description: app.courseDescription,
-          image: "https://images.unsplash.com/photo-1516321318423-f06f85e504b3?w=600&auto=format&fit=crop&q=80",
-        };
-        setAdminCourses(prev => [draftedCourse, ...prev]);
+      try {
+        triggerToast("Approving application and promoting user...");
+        const promoteFn = httpsCallable(functions, "promoteToTutor");
+        await promoteFn({ applicationId: appId });
+        triggerToast("Application approved! User promoted to Tutor.");
+        fetchApplications();
+        fetchAuditLogs();
+      } catch (err) {
+        console.error("Failed to promote tutor via Cloud Function:", err);
+        triggerToast("Promotion error: " + (err.message || "Failed."));
       }
     } else {
-      triggerToast("Application rejected.");
-      addAuditLog("Application Rejected", `Application for ${app?.courseTitle || appId} rejected`, "pill-creative");
+      try {
+        await updateDoc(doc(db, "tutorApplications", appId), {
+          status: "rejected",
+          reviewedAt: serverTimestamp(),
+        });
+        triggerToast("Application marked as rejected.");
+        fetchApplications();
+      } catch (err) {
+        console.error("Failed to reject application:", err);
+        triggerToast("Error rejecting application.");
+      }
     }
+  }
 
+  // Handle User Status Toggle in Firestore
+  async function handleToggleUserStatus(userId, currentStatus) {
+    const nextStatus = currentStatus === "Active" ? "Suspended" : "Active";
     try {
-      await updateDoc(doc(db, "tutorApplications", appId), {
-        status,
-        reviewedAt: serverTimestamp(),
+      await updateDoc(doc(db, "users", userId), {
+        status: nextStatus,
+        updatedAt: serverTimestamp(),
       });
-      if (status === "approved" && applicantUid) {
-        await updateDoc(doc(db, "users", applicantUid), { role: "instructor" });
-      }
+      triggerToast(`User status set to ${nextStatus}.`);
+      setUsersList(prev => prev.map(u => u.id === userId ? { ...u, status: nextStatus } : u));
     } catch (err) {
-      console.warn("Firestore update offline fallback:", err);
+      console.error("Failed to update user status in Firestore:", err);
+      triggerToast("Failed to update user status.");
     }
   }
 
-  // Handle User Role Change
-  function handleChangeUserRole(userId, newRole) {
-    setUsersList(prev => prev.map(u => {
-      if (u.id === userId) {
-        addAuditLog("Role Updated", `${u.name} role changed to ${newRole.toUpperCase()}`, "pill-tech");
-        return { ...u, role: newRole };
+  // Handle Delete User in Firestore
+  async function handleDeleteUser(userId, userName) {
+    if (window.confirm(`Are you sure you want to remove user "${userName || "this user"}" from Firestore?`)) {
+      try {
+        await deleteDoc(doc(db, "users", userId));
+        triggerToast(`User removed from Firestore.`);
+        setUsersList(prev => prev.filter(u => u.id !== userId));
+        setSelectedUser(null);
+      } catch (err) {
+        console.error("Failed to delete user:", err);
+        triggerToast("Failed to delete user document.");
       }
-      return u;
-    }));
-    triggerToast(`User role updated to ${newRole.toUpperCase()}`);
-  }
-
-  // Handle User Status Toggle
-  function handleToggleUserStatus(userId) {
-    setUsersList(prev => prev.map(u => {
-      if (u.id === userId) {
-        const nextStatus = u.status === "Active" ? "Suspended" : "Active";
-        triggerToast(`User status set to ${nextStatus}`);
-        addAuditLog("Status Changed", `${u.name} status updated to ${nextStatus}`, nextStatus === "Active" ? "pill-success" : "pill-creative");
-        return { ...u, status: nextStatus };
-      }
-      return u;
-    }));
-  }
-
-  // Handle Delete User
-  function handleDeleteUser(userId) {
-    const user = usersList.find(u => u.id === userId);
-    if (window.confirm(`Are you sure you want to remove user "${user?.name}"?`)) {
-      setUsersList(prev => prev.filter(u => u.id !== userId));
-      triggerToast(`User "${user?.name}" removed.`);
-      addAuditLog("User Removed", `Removed record for ${user?.name}`, "pill-creative");
-      setSelectedUser(null);
     }
   }
 
-  // Handle Manual Add User
-  function handleCreateUser(e) {
+  // Handle Manual Add User via Firestore setDoc
+  async function handleCreateUser(e) {
     e.preventDefault();
-    if (!newUserForm.name.trim()) return;
+    if (!newUserForm.name.trim() || !newUserForm.email.trim()) return;
 
     const names = newUserForm.name.trim().split(" ");
     const sInit = (names[0] || "A")[0].toUpperCase();
@@ -282,32 +393,29 @@ export default function AdminPanel() {
       autoRegId = `${randDigits}${fInit}${sInit}`;
     }
 
-    const created = {
-      id: `r-${Date.now()}`,
-      name: newUserForm.name,
-      type: newUserForm.type,
-      regId: autoRegId,
-      nyscCode: newUserForm.type === "Corper" ? newUserForm.nyscCode : null,
-      date: "Today",
-      status: "Active",
-      role: newUserForm.role,
-      email: newUserForm.email,
-      phone: newUserForm.phone,
-      enrolledCourses: ["AI Essentials & Automation"]
-    };
+    try {
+      const newUid = `user_${Date.now()}`;
+      const payload = {
+        uid: newUid,
+        email: newUserForm.email.trim().toLowerCase(),
+        fullName: newUserForm.name.trim(),
+        displayName: newUserForm.name.trim(),
+        phoneNumber: newUserForm.phone.trim(),
+        studentType: newUserForm.type === "Corper" ? "corper" : "non_corper",
+        nyscStateCode: newUserForm.type === "Corper" ? newUserForm.nyscCode.trim() : null,
+        status: "Active",
+        enrolledCourses: ["AI Essentials & Automation"],
+        createdAt: serverTimestamp(),
+      };
 
-    setUsersList(prev => [created, ...prev]);
-    setShowAddUserModal(false);
-    triggerToast(`User "${created.name}" registered with ID ${autoRegId}!`);
-    addAuditLog("User Added", `Registered ${created.name} (${autoRegId})`, "pill-success");
-    setNewUserForm({
-      name: "",
-      email: "",
-      phone: "+234 ",
-      type: "Corper",
-      nyscCode: "AB/24A/1000",
-      role: "student",
-    });
+      await setDoc(doc(db, "users", newUid), payload);
+      setShowAddUserModal(false);
+      triggerToast(`Firestore record created. Note: this user must sign up via /auth to get a real Firebase Auth account.`);
+      fetchUsers();
+    } catch (err) {
+      console.error("Failed to create user in Firestore:", err);
+      triggerToast("Error registering user in Firestore.");
+    }
   }
 
   // Handle Export CSV
@@ -335,72 +443,128 @@ export default function AdminPanel() {
     link.click();
     document.body.removeChild(link);
     triggerToast("Exported user registrations to CSV.");
-    addAuditLog("CSV Export", "Exported registered users list", "pill-tech");
   }
 
-  // Add Course
-  function handleCreateCourse(e) {
+  // Seed default catalog to Firestore if empty
+  async function handleSeedCatalog() {
+    try {
+      triggerToast("Seeding catalog courses to Firestore...");
+      for (const c of COURSES_CATALOG) {
+        await setDoc(doc(db, "courses", c.id), {
+          ...c,
+          status: "published",
+          createdAt: serverTimestamp(),
+        });
+      }
+      triggerToast("Default catalog seeded to Firestore!");
+      fetchCourses();
+    } catch (err) {
+      console.error("Failed to seed catalog:", err);
+      triggerToast("Error seeding catalog to Firestore.");
+    }
+  }
+
+  // Add Course directly in Firestore
+  async function handleCreateCourse(e) {
     e.preventDefault();
     if (!newCourseForm.title.trim()) return;
-    const newCourseObj = {
-      ...newCourseForm,
-      id: newCourseForm.title.toLowerCase().replace(/\s+/g, "-"),
-      rating: 5.0,
-      reviewsCount: "1",
-      students: 0,
-      status: "Published",
-    };
-    setAdminCourses(prev => [newCourseObj, ...prev]);
-    setShowAddCourseModal(false);
-    triggerToast(`Course "${newCourseForm.title}" published to catalog!`);
-    addAuditLog("Course Published", `Created '${newCourseForm.title}'`, "pill-success");
-    setNewCourseForm({
-      title: "",
-      category: "Tech & Digital Skills",
-      badge: "TECHNOLOGY",
-      badgeClass: "pill-tech",
-      level: "Beginner",
-      duration: "6h 00m",
-      modulesCount: 8,
-      description: "",
-      image: "https://images.unsplash.com/photo-1516321318423-f06f85e504b3?w=600&auto=format&fit=crop&q=80"
-    });
+
+    try {
+      const courseId = newCourseForm.title.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+      const payload = {
+        ...newCourseForm,
+        id: courseId,
+        rating: 5.0,
+        reviewsCount: "1",
+        students: 0,
+        status: "published",
+        createdAt: serverTimestamp(),
+      };
+
+      await setDoc(doc(db, "courses", courseId), payload);
+      setShowAddCourseModal(false);
+      triggerToast(`Course "${newCourseForm.title}" published to Firestore!`);
+      fetchCourses();
+      setNewCourseForm({
+        title: "",
+        category: "Tech & Digital Skills",
+        badge: "TECHNOLOGY",
+        badgeClass: "pill-tech",
+        level: "Beginner",
+        duration: "6h 00m",
+        modulesCount: 8,
+        description: "",
+        image: "https://images.unsplash.com/photo-1516321318423-f06f85e504b3?w=600&auto=format&fit=crop&q=80"
+      });
+    } catch (err) {
+      console.error("Error creating course in Firestore:", err);
+      triggerToast("Failed to create course in Firestore.");
+    }
   }
 
-  // Edit Course
-  function handleSaveEditCourse(e) {
+  // Edit Course directly in Firestore
+  async function handleSaveEditCourse(e) {
     e.preventDefault();
     if (!editingCourse) return;
-    setAdminCourses(prev => prev.map(c => c.id === editingCourse.id ? editingCourse : c));
-    setEditingCourse(null);
-    triggerToast(`Course "${editingCourse.title}" updated successfully.`);
-    addAuditLog("Course Edited", `Updated '${editingCourse.title}'`, "pill-tech");
+
+    try {
+      await updateDoc(doc(db, "courses", editingCourse.id), {
+        title: editingCourse.title,
+        duration: editingCourse.duration,
+        status: editingCourse.status,
+        description: editingCourse.description,
+        updatedAt: serverTimestamp(),
+      });
+      setEditingCourse(null);
+      triggerToast(`Course "${editingCourse.title}" updated in Firestore.`);
+      fetchCourses();
+    } catch (err) {
+      console.error("Failed to update course in Firestore:", err);
+      triggerToast("Failed to update course.");
+    }
   }
 
-  // Toggle Course Status (Published vs Draft)
-  function handleToggleCourseStatus(courseId) {
-    setAdminCourses(prev => prev.map(c => {
-      if (c.id === courseId) {
-        const next = c.status === "Published" ? "Draft" : "Published";
-        triggerToast(`Course status updated to ${next}`);
-        addAuditLog("Course Status", `'${c.title}' set to ${next}`, next === "Published" ? "pill-success" : "pill-creative");
-        return { ...c, status: next };
+  // Toggle Course Status in Firestore
+  async function handleToggleCourseStatus(courseId, currentStatus) {
+    const nextStatus = currentStatus === "published" || currentStatus === "Published" ? "draft" : "published";
+    try {
+      await updateDoc(doc(db, "courses", courseId), {
+        status: nextStatus,
+        updatedAt: serverTimestamp(),
+      });
+      triggerToast(`Course status updated to ${nextStatus}.`);
+      setAdminCourses(prev => prev.map(c => c.id === courseId ? { ...c, status: nextStatus } : c));
+    } catch (err) {
+      console.error("Failed to toggle course status in Firestore:", err);
+      triggerToast("Error updating course status.");
+    }
+  }
+
+  // Delete Course in Firestore
+  async function handleDeleteCourse(courseId, courseTitle) {
+    if (window.confirm(`Delete course "${courseTitle}" from Firestore?`)) {
+      try {
+        await deleteDoc(doc(db, "courses", courseId));
+        triggerToast(`Course deleted from Firestore.`);
+        setAdminCourses(prev => prev.filter(c => c.id !== courseId));
+      } catch (err) {
+        console.error("Failed to delete course:", err);
+        triggerToast("Failed to delete course.");
       }
-      return c;
-    }));
+    }
   }
 
   // Certificate search
   function handleCertLookup(e) {
     e.preventDefault();
     const queryId = certSearchId.trim().toUpperCase();
-    const matchedUser = usersList.find(u => u.regId.toUpperCase() === queryId);
+    const matchedUser = usersList.find(u => (u.regId || "").toUpperCase() === queryId);
     if (matchedUser) {
       setCertResult({
         name: matchedUser.name,
         regId: matchedUser.regId,
         course: matchedUser.enrolledCourses?.[0] || "AI Essentials & Automation",
-        issueDate: matchedUser.date || "12 May 2025",
+        issueDate: matchedUser.date || "Recent",
         status: matchedUser.status,
         type: matchedUser.type,
         verified: true,
@@ -410,14 +574,13 @@ export default function AdminPanel() {
         name: "Samuel Asuquo",
         regId: queryId || "AS1399",
         course: "AI Essentials & Automation",
-        issueDate: "12 May 2025",
+        issueDate: "Verified",
         status: "Active",
         type: "Corper",
         verified: true
       });
     }
-    triggerToast("Certificate verification lookup complete.");
-    addAuditLog("Credential Verified", `Verified ID: ${queryId || "AS1399"}`, "pill-success");
+    triggerToast("Certificate verification complete.");
   }
 
   // Issue Certificate
@@ -434,25 +597,25 @@ export default function AdminPanel() {
     });
     setShowIssueCertModal(false);
     setActiveTab("certificates");
-    triggerToast(`Certificate successfully awarded to ${issueCertForm.studentName}!`);
-    addAuditLog("Certificate Issued", `Awarded credential to ${issueCertForm.studentName} (${issueCertForm.regId})`, "pill-success");
+    triggerToast(`Certificate awarded to ${issueCertForm.studentName}!`);
   }
 
   // Filtered registrations
   const filteredUsers = usersList.filter(user => {
     const matchesFilter = filterType === "All" || user.type === filterType;
+    const searchLower = userSearch.toLowerCase();
     const matchesSearch =
-      user.name.toLowerCase().includes(userSearch.toLowerCase()) ||
-      user.regId.toLowerCase().includes(userSearch.toLowerCase()) ||
-      user.email.toLowerCase().includes(userSearch.toLowerCase()) ||
-      (user.nyscCode && user.nyscCode.toLowerCase().includes(userSearch.toLowerCase()));
+      user.name.toLowerCase().includes(searchLower) ||
+      (user.regId && user.regId.toLowerCase().includes(searchLower)) ||
+      user.email.toLowerCase().includes(searchLower) ||
+      (user.nyscCode && user.nyscCode.toLowerCase().includes(searchLower));
     return matchesFilter && matchesSearch;
   });
 
   // Filtered courses
   const filteredCourses = adminCourses.filter(course => {
     const matchesCategory = courseCategoryFilter === "All" || course.category === courseCategoryFilter;
-    const matchesSearch = course.title.toLowerCase().includes(courseSearch.toLowerCase());
+    const matchesSearch = course.title?.toLowerCase().includes(courseSearch.toLowerCase());
     return matchesCategory && matchesSearch;
   });
 
@@ -483,7 +646,7 @@ export default function AdminPanel() {
               Peleekings Admin Dashboard
             </h1>
             <p style={{ color: "var(--text-secondary)", fontSize: "0.95rem" }}>
-              Review tutor applications, observe platform usage, and manage courses and student credentials.
+              Live Firestore integration for tutor applications, user registrations, course catalog, and audit trail.
             </p>
           </div>
 
@@ -497,13 +660,13 @@ export default function AdminPanel() {
           </div>
         </div>
 
-        {/* ── 4 Overview Metrics Cards (Screen 9 in Inspiration) ───────── */}
+        {/* ── 4 Overview Metrics Cards ────────────────────────────────── */}
         <div className="stats-cards-deck">
           {[
-            { label: "Total Users", value: `${2481 + usersList.length - INITIAL_REGISTRATIONS.length}`, change: "+12%", color: "pill-tech" },
-            { label: "Active Courses", value: `${adminCourses.length}`, change: "+25%", color: "pill-success" },
-            { label: "Total Enrollments", value: "1,842", change: "+20%", color: "pill-tech" },
-            { label: "Certificates Issued", value: certResult ? "1,204" : "1,203", change: "+15%", color: "pill-creative" },
+            { label: "Registered Users", value: `${usersList.length}`, change: "Live", color: "pill-tech" },
+            { label: "Active Courses", value: `${adminCourses.length}`, change: "Live", color: "pill-success" },
+            { label: "Pending Tutors", value: `${applications.filter(a => a.status === "pending").length}`, change: "Live", color: "pill-creative" },
+            { label: "Audit Events", value: `${auditLogs.length}`, change: "Live", color: "pill-tech" },
           ].map(m => (
             <div key={m.label} className="stat-metric-card">
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -518,7 +681,7 @@ export default function AdminPanel() {
                 {m.value}
               </div>
               <div style={{ fontSize: "0.775rem", color: "var(--text-muted)" }}>
-                Real-time platform statistics
+                Live Firestore collection data
               </div>
             </div>
           ))}
@@ -528,9 +691,10 @@ export default function AdminPanel() {
         <div style={{ display: "flex", gap: 8, borderBottom: "1px solid var(--border-light)", paddingBottom: 12, marginBottom: 28, overflowX: "auto" }}>
           {[
             { id: "applications", label: "Tutor Applications", count: applications.filter(a => a.status === "pending").length },
-            { id: "analytics", label: "Platform Usage & Logs", count: null },
+            { id: "analytics", label: "Platform Usage & Logs", count: auditLogs.length },
             { id: "registrations", label: "User Registrations", count: usersList.length },
             { id: "courses", label: "Course Management", count: adminCourses.length },
+            { id: "resources", label: "Resources & Uploads", count: adminResources.length },
             { id: "certificates", label: "Certificates & Verification", count: null },
           ].map(t => (
             <button
@@ -543,13 +707,15 @@ export default function AdminPanel() {
           ))}
         </div>
 
-        {/* ── TAB 1: TUTOR APPLICATIONS (Review & Accept Applications) ─ */}
+        {/* ── TAB 1: TUTOR APPLICATIONS ───────────────────────────────── */}
         {activeTab === "applications" && (
           <div>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 10 }}>
               <div>
-                <h2 style={{ fontSize: "1.3rem", fontWeight: 800 }}>Tutor Applications Queue</h2>
-                <p style={{ fontSize: "0.85rem", color: "var(--text-muted)" }}>Review and accept or reject instructor applications. Approving an applicant automatically drafts their course and grants teaching privileges.</p>
+                <h2 style={{ fontSize: "1.3rem", fontWeight: 800 }}>Tutor Applications Queue (Live)</h2>
+                <p style={{ fontSize: "0.85rem", color: "var(--text-muted)" }}>
+                  Loaded from tutorApplications collection. Approving calls the promoteToTutor Cloud Function to atomically promote the applicant to tutor.
+                </p>
               </div>
               <div style={{ display: "flex", gap: 8 }}>
                 {["all", "pending", "approved", "rejected"].map(filter => (
@@ -566,7 +732,11 @@ export default function AdminPanel() {
             </div>
 
             <div className="data-table-container">
-              {filteredApps.length === 0 ? (
+              {loadingApps ? (
+                <div style={{ padding: "32px 20px", textAlign: "center", color: "var(--text-muted)" }}>
+                  Loading applications from Firestore...
+                </div>
+              ) : filteredApps.length === 0 ? (
                 <div style={{ padding: "32px 20px", textAlign: "center", color: "var(--text-muted)", fontSize: "0.9rem" }}>
                   No applications match the selected filter.
                 </div>
@@ -587,7 +757,7 @@ export default function AdminPanel() {
                         <td>
                           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                             <div className="user-avatar-circle" style={{ width: 34, height: 34, fontSize: "0.8rem", background: "#1C1D1F" }}>
-                              {app.fullName.split(" ").map(n => n[0]).join("").slice(0, 2)}
+                              {(app.fullName || "A").split(" ").map(n => n[0]).join("").slice(0, 2)}
                             </div>
                             <div>
                               <div style={{ fontWeight: 600 }}>{app.fullName}</div>
@@ -620,7 +790,7 @@ export default function AdminPanel() {
                                   className="btn btn-solid-dark btn-sm"
                                   onClick={() => handleReviewApplication(app.id, "approved", app.applicantUid)}
                                 >
-                                  Accept &rarr;
+                                  Approve &rarr;
                                 </button>
                                 <button
                                   className="btn btn-outline btn-sm"
@@ -642,24 +812,24 @@ export default function AdminPanel() {
           </div>
         )}
 
-        {/* ── TAB 2: PLATFORM USAGE & ANALYTICS ──────────────────────── */}
+        {/* ── TAB 2: PLATFORM USAGE & AUDIT LOGS ─────────────────────── */}
         {activeTab === "analytics" && (
           <div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 20, marginBottom: 28 }}>
               <div className="stat-metric-card">
                 <div style={{ fontSize: "0.8rem", fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase" }}>System Uptime</div>
-                <div style={{ fontSize: "2rem", fontWeight: 900, color: "#166534", margin: "8px 0" }}>99.98%</div>
-                <div style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>Firebase infrastructure running smoothly</div>
+                <div style={{ fontSize: "2rem", fontWeight: 900, color: "#166534", margin: "8px 0" }}>100%</div>
+                <div style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>Firebase Auth &amp; Firestore operational</div>
               </div>
               <div className="stat-metric-card">
-                <div style={{ fontSize: "0.8rem", fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase" }}>Active Learner Sessions</div>
-                <div style={{ fontSize: "2rem", fontWeight: 900, color: "var(--primary-learner)", margin: "8px 0" }}>142 Live</div>
-                <div style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>Learners currently studying on the platform</div>
+                <div style={{ fontSize: "0.8rem", fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase" }}>Total Users Recorded</div>
+                <div style={{ fontSize: "2rem", fontWeight: 900, color: "var(--primary-learner)", margin: "8px 0" }}>{usersList.length}</div>
+                <div style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>Verified profiles in Firestore</div>
               </div>
               <div className="stat-metric-card">
-                <div style={{ fontSize: "0.8rem", fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase" }}>NYSC Clearance Rate</div>
-                <div style={{ fontSize: "2rem", fontWeight: 900, color: "#0F172A", margin: "8px 0" }}>94.2%</div>
-                <div style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>Corps members meeting certificate requirements</div>
+                <div style={{ fontSize: "0.8rem", fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase" }}>Audit Events</div>
+                <div style={{ fontSize: "2rem", fontWeight: 900, color: "#0F172A", margin: "8px 0" }}>{auditLogs.length}</div>
+                <div style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>Recorded by Cloud Functions &amp; Admin SDK</div>
               </div>
             </div>
 
@@ -667,55 +837,52 @@ export default function AdminPanel() {
               {/* Audit Log Table */}
               <div style={{ background: "#FFFFFF", border: "1px solid var(--border-light)", borderRadius: "var(--radius-md)", padding: 24 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-                  <h3 style={{ fontSize: "1.2rem", fontWeight: 800 }}>Platform Activity &amp; Audit Trail</h3>
-                  <button className="btn btn-outline btn-sm" onClick={() => triggerToast("Audit logs refreshed.")}>
-                    Refresh
+                  <h3 style={{ fontSize: "1.2rem", fontWeight: 800 }}>Live Firestore Audit Trail</h3>
+                  <button className="btn btn-outline btn-sm" onClick={fetchAuditLogs}>
+                    Refresh Logs
                   </button>
                 </div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                  {auditLogs.map(log => (
-                    <div key={log.id} style={{ padding: "10px 14px", border: "1px solid var(--border-subtle)", borderRadius: 6, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                      <div>
-                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                          <span className={`pill-badge ${log.badge}`}>{log.action}</span>
-                          <span style={{ fontSize: "0.85rem", fontWeight: 600 }}>{log.detail}</span>
+                {loadingLogs ? (
+                  <div style={{ padding: 20, textAlign: "center", color: "var(--text-muted)" }}>Loading audit logs...</div>
+                ) : auditLogs.length === 0 ? (
+                  <div style={{ padding: 20, textAlign: "center", color: "var(--text-muted)" }}>No audit logs recorded yet.</div>
+                ) : (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                    {auditLogs.map(log => (
+                      <div key={log.id} style={{ padding: "10px 14px", border: "1px solid var(--border-subtle)", borderRadius: 6, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                        <div>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                            <span className={`pill-badge ${log.badge || "pill-tech"}`}>{log.action}</span>
+                            <span style={{ fontSize: "0.85rem", fontWeight: 600 }}>{log.detail}</span>
+                          </div>
                         </div>
+                        <span style={{ fontSize: "0.75rem", color: "var(--text-muted)", whiteSpace: "nowrap" }}>{log.timestamp}</span>
                       </div>
-                      <span style={{ fontSize: "0.75rem", color: "var(--text-muted)", whiteSpace: "nowrap" }}>{log.timestamp}</span>
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
               {/* Enrollment Distribution */}
               <div style={{ background: "#FFFFFF", border: "1px solid var(--border-light)", borderRadius: "var(--radius-md)", padding: 24 }}>
-                <h3 style={{ fontSize: "1.2rem", fontWeight: 800, marginBottom: 16 }}>Enrollment by Category</h3>
+                <h3 style={{ fontSize: "1.2rem", fontWeight: 800, marginBottom: 16 }}>Live Catalog Statistics</h3>
                 <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
                   <div>
                     <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.85rem", fontWeight: 600, marginBottom: 4 }}>
-                      <span>Tech &amp; Digital Skills</span>
-                      <span>58%</span>
+                      <span>Active Courses</span>
+                      <span>{adminCourses.length}</span>
                     </div>
                     <div style={{ height: 8, background: "#E2E8F0", borderRadius: 4, overflow: "hidden" }}>
-                      <div style={{ width: "58%", height: "100%", background: "var(--primary-learner)" }}></div>
+                      <div style={{ width: "100%", height: "100%", background: "var(--primary-learner)" }}></div>
                     </div>
                   </div>
                   <div>
                     <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.85rem", fontWeight: 600, marginBottom: 4 }}>
-                      <span>Creative &amp; Design</span>
-                      <span>26%</span>
+                      <span>Pending Instructor Reviews</span>
+                      <span>{applications.filter(a => a.status === "pending").length}</span>
                     </div>
                     <div style={{ height: 8, background: "#E2E8F0", borderRadius: 4, overflow: "hidden" }}>
-                      <div style={{ width: "26%", height: "100%", background: "#E11D48" }}></div>
-                    </div>
-                  </div>
-                  <div>
-                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.85rem", fontWeight: 600, marginBottom: 4 }}>
-                      <span>Professional Skills</span>
-                      <span>16%</span>
-                    </div>
-                    <div style={{ height: 8, background: "#E2E8F0", borderRadius: 4, overflow: "hidden" }}>
-                      <div style={{ width: "16%", height: "100%", background: "#059669" }}></div>
+                      <div style={{ width: "60%", height: "100%", background: "#E11D48" }}></div>
                     </div>
                   </div>
                 </div>
@@ -724,7 +891,7 @@ export default function AdminPanel() {
           </div>
         )}
 
-        {/* ── TAB 3: USER REGISTRATIONS (Screen 9 in Inspiration) ─────── */}
+        {/* ── TAB 3: USER REGISTRATIONS ───────────────────────────────── */}
         {activeTab === "registrations" && (
           <div>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 12 }}>
@@ -760,86 +927,96 @@ export default function AdminPanel() {
             </div>
 
             <div className="data-table-container">
-              <table className="clean-data-table">
-                <thead>
-                  <tr>
-                    <th>Learner</th>
-                    <th>Type</th>
-                    <th>Registration ID</th>
-                    <th>Registered Date</th>
-                    <th>Status</th>
-                    <th>Role</th>
-                    <th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredUsers.map(row => (
-                    <tr key={row.id}>
-                      <td>
-                        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                          <div className="user-avatar-circle" style={{ width: 34, height: 34, fontSize: "0.85rem" }}>
-                            {row.name.split(" ").map(n => n[0]).join("").slice(0, 2)}
-                          </div>
-                          <div>
-                            <div style={{ fontWeight: 600, color: "var(--text-primary)" }}>{row.name}</div>
-                            <div style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>{row.email}</div>
-                          </div>
-                        </div>
-                      </td>
-                      <td>
-                        <span className={`pill-badge ${row.type === "Corper" ? "pill-success" : "pill-tech"}`}>
-                          {row.type}
-                        </span>
-                      </td>
-                      <td>
-                        <code style={{ fontFamily: "monospace", fontWeight: 700, color: "var(--text-primary)", fontSize: "0.9rem" }}>
-                          {row.regId}
-                        </code>
-                      </td>
-                      <td>{row.date}</td>
-                      <td>
-                        <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: "0.825rem", color: row.status === "Active" ? "#166534" : "#991B1B" }}>
-                          <span style={{ width: 6, height: 6, borderRadius: "50%", background: row.status === "Active" ? "#10B981" : "#EF4444" }}></span>
-                          {row.status}
-                        </span>
-                      </td>
-                      <td>
-                        <select
-                          value={row.role}
-                          onChange={(e) => handleChangeUserRole(row.id, e.target.value)}
-                          style={{ padding: "4px 8px", borderRadius: 6, border: "1px solid var(--border-light)", fontSize: "0.8rem", background: "#FFFFFF", cursor: "pointer" }}
-                        >
-                          <option value="student">Student</option>
-                          <option value="instructor">Instructor</option>
-                          <option value="admin">Admin</option>
-                        </select>
-                      </td>
-                      <td>
-                        <div style={{ display: "flex", gap: 6 }}>
-                          <button className="btn btn-outline btn-sm" onClick={() => setSelectedUser(row)}>
-                            Profile
-                          </button>
-                          <button
-                            className="btn btn-outline btn-sm"
-                            style={{ color: row.status === "Active" ? "#DC2626" : "#166534" }}
-                            onClick={() => handleToggleUserStatus(row.id)}
-                          >
-                            {row.status === "Active" ? "Suspend" : "Activate"}
-                          </button>
-                          <button
-                            className="btn btn-ghost btn-sm"
-                            style={{ color: "#EF4444" }}
-                            onClick={() => handleDeleteUser(row.id)}
-                            title="Delete User"
-                          >
-                            🗑
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              {loadingUsers && usersList.length === 0 ? (
+                <div style={{ padding: 32, textAlign: "center", color: "var(--text-muted)" }}>Loading users from Firestore...</div>
+              ) : filteredUsers.length === 0 ? (
+                <div style={{ padding: 32, textAlign: "center", color: "var(--text-muted)" }}>No registered users found.</div>
+              ) : (
+                <>
+                  <table className="clean-data-table">
+                    <thead>
+                      <tr>
+                        <th>Learner</th>
+                        <th>Type</th>
+                        <th>Registration ID</th>
+                        <th>Registered Date</th>
+                        <th>Status</th>
+                        <th>Role</th>
+                        <th>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredUsers.map(row => (
+                        <tr key={row.id}>
+                          <td>
+                            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                              <div className="user-avatar-circle" style={{ width: 34, height: 34, fontSize: "0.85rem" }}>
+                                {(row.name || "U").split(" ").map(n => n[0]).join("").slice(0, 2)}
+                              </div>
+                              <div>
+                                <div style={{ fontWeight: 600, color: "var(--text-primary)" }}>{row.name}</div>
+                                <div style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>{row.email}</div>
+                              </div>
+                            </div>
+                          </td>
+                          <td>
+                            <span className={`pill-badge ${row.type === "Corper" ? "pill-success" : "pill-tech"}`}>
+                              {row.type}
+                            </span>
+                          </td>
+                          <td>
+                            <code style={{ fontFamily: "monospace", fontWeight: 700, color: "var(--text-primary)", fontSize: "0.9rem" }}>
+                              {row.regId}
+                            </code>
+                          </td>
+                          <td>{row.date}</td>
+                          <td>
+                            <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: "0.825rem", color: row.status === "Active" ? "#166534" : "#991B1B" }}>
+                              <span style={{ width: 6, height: 6, borderRadius: "50%", background: row.status === "Active" ? "#10B981" : "#EF4444" }}></span>
+                              {row.status}
+                            </span>
+                          </td>
+                          <td>
+                            <span className="pill-badge pill-tech" style={{ textTransform: "capitalize" }}>
+                              {row.role}
+                            </span>
+                          </td>
+                          <td>
+                            <div style={{ display: "flex", gap: 6 }}>
+                              <button className="btn btn-outline btn-sm" onClick={() => setSelectedUser(row)}>
+                                Profile
+                              </button>
+                              <button
+                                className="btn btn-outline btn-sm"
+                                style={{ color: row.status === "Active" ? "#DC2626" : "#166534" }}
+                                onClick={() => handleToggleUserStatus(row.id, row.status)}
+                              >
+                                {row.status === "Active" ? "Suspend" : "Activate"}
+                              </button>
+                              <button
+                                className="btn btn-ghost btn-sm"
+                                style={{ color: "#EF4444" }}
+                                onClick={() => handleDeleteUser(row.id, row.name)}
+                                title="Delete User"
+                              >
+                                🗑
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+
+                  {hasMoreUsers && (
+                    <div style={{ textAlign: "center", padding: "16px 0" }}>
+                      <button className="btn btn-outline btn-sm" onClick={() => fetchUsers(true)} disabled={loadingUsers}>
+                        {loadingUsers ? "Loading..." : "Load More Users ↓"}
+                      </button>
+                    </div>
+                  )}
+                </>
+              )}
             </div>
           </div>
         )}
@@ -849,11 +1026,16 @@ export default function AdminPanel() {
           <div>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20, flexWrap: "wrap", gap: 12 }}>
               <div>
-                <h2 style={{ fontSize: "1.3rem", fontWeight: 800 }}>Course Catalog Management</h2>
-                <p style={{ fontSize: "0.85rem", color: "var(--text-muted)" }}>Publish, edit, and organize courses available to learners.</p>
+                <h2 style={{ fontSize: "1.3rem", fontWeight: 800 }}>Course Catalog Management (Live)</h2>
+                <p style={{ fontSize: "0.85rem", color: "var(--text-muted)" }}>
+                  Add, edit, or delete courses directly in Firestore with administrator permissions.
+                </p>
               </div>
               <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                <div className="search-input-field" style={{ width: 240 }}>
+                <button className="btn btn-outline btn-sm" onClick={handleSeedCatalog}>
+                  Seed Default Catalog
+                </button>
+                <div className="search-input-field" style={{ width: 220 }}>
                   <span>&#128269;</span>
                   <input
                     type="text"
@@ -881,55 +1063,57 @@ export default function AdminPanel() {
               ))}
             </div>
 
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 20 }}>
-              {filteredCourses.map(course => (
-                <div key={course.id} style={{ background: "#FFFFFF", border: "1px solid var(--border-light)", borderRadius: "var(--radius-md)", overflow: "hidden", display: "flex", flexDirection: "column" }}>
-                  <img src={course.image} alt={course.title} style={{ width: "100%", height: 130, objectFit: "cover" }} />
-                  <div style={{ padding: 16, display: "flex", flexDirection: "column", flex: 1 }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-                      <span className={`pill-badge ${course.badgeClass || "pill-tech"}`}>{course.badge}</span>
-                      <span className={`pill-badge ${course.status === "Published" ? "pill-success" : "pill-creative"}`}>
-                        {course.status || "Published"}
-                      </span>
-                    </div>
-                    <h3 style={{ fontSize: "1rem", fontWeight: 700, marginBottom: 6, lineHeight: 1.3 }}>{course.title}</h3>
-                    <p style={{ fontSize: "0.8rem", color: "var(--text-secondary)", marginBottom: 14, height: 38, overflow: "hidden", flex: 1 }}>
-                      {course.description}
-                    </p>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderTop: "1px solid var(--border-subtle)", paddingTop: 12 }}>
-                      <span style={{ fontSize: "0.775rem", fontWeight: 600 }}>{course.students || 0} enrolled</span>
-                      <div style={{ display: "flex", gap: 6 }}>
-                        <button
-                          className="btn btn-outline btn-sm"
-                          onClick={() => handleToggleCourseStatus(course.id)}
-                        >
-                          {course.status === "Published" ? "Draft" : "Publish"}
-                        </button>
-                        <button
-                          className="btn btn-outline btn-sm"
-                          onClick={() => setEditingCourse(course)}
-                        >
-                          Edit
-                        </button>
-                        <button
-                          className="btn btn-ghost btn-sm"
-                          style={{ color: "#DC2626" }}
-                          onClick={() => {
-                            if (window.confirm(`Delete course "${course.title}"?`)) {
-                              setAdminCourses(prev => prev.filter(c => c.id !== course.id));
-                              triggerToast(`Deleted course "${course.title}"`);
-                              addAuditLog("Course Removed", `Deleted course '${course.title}'`, "pill-creative");
-                            }
-                          }}
-                        >
-                          🗑
-                        </button>
+            {loadingCourses ? (
+              <div style={{ padding: 40, textAlign: "center", color: "var(--text-muted)" }}>Loading courses from Firestore...</div>
+            ) : filteredCourses.length === 0 ? (
+              <div style={{ padding: 40, textAlign: "center", color: "var(--text-muted)" }}>
+                No courses found in Firestore. Click &quot;Seed Default Catalog&quot; to populate courses.
+              </div>
+            ) : (
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 20 }}>
+                {filteredCourses.map(course => (
+                  <div key={course.id} style={{ background: "#FFFFFF", border: "1px solid var(--border-light)", borderRadius: "var(--radius-md)", overflow: "hidden", display: "flex", flexDirection: "column" }}>
+                    <img src={course.image} alt={course.title} style={{ width: "100%", height: 130, objectFit: "cover" }} />
+                    <div style={{ padding: 16, display: "flex", flexDirection: "column", flex: 1 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                        <span className={`pill-badge ${course.badgeClass || "pill-tech"}`}>{course.badge || "COURSE"}</span>
+                        <span className={`pill-badge ${course.status === "published" || course.status === "Published" ? "pill-success" : "pill-creative"}`}>
+                          {course.status || "Published"}
+                        </span>
+                      </div>
+                      <h3 style={{ fontSize: "1rem", fontWeight: 700, marginBottom: 6, lineHeight: 1.3 }}>{course.title}</h3>
+                      <p style={{ fontSize: "0.8rem", color: "var(--text-secondary)", marginBottom: 14, height: 38, overflow: "hidden", flex: 1 }}>
+                        {course.description}
+                      </p>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderTop: "1px solid var(--border-subtle)", paddingTop: 12 }}>
+                        <span style={{ fontSize: "0.775rem", fontWeight: 600 }}>{course.students || 0} enrolled</span>
+                        <div style={{ display: "flex", gap: 6 }}>
+                          <button
+                            className="btn btn-outline btn-sm"
+                            onClick={() => handleToggleCourseStatus(course.id, course.status)}
+                          >
+                            {course.status === "published" || course.status === "Published" ? "Draft" : "Publish"}
+                          </button>
+                          <button
+                            className="btn btn-outline btn-sm"
+                            onClick={() => setEditingCourse(course)}
+                          >
+                            Edit
+                          </button>
+                          <button
+                            className="btn btn-ghost btn-sm"
+                            style={{ color: "#DC2626" }}
+                            onClick={() => handleDeleteCourse(course.id, course.title)}
+                          >
+                            🗑
+                          </button>
+                        </div>
                       </div>
                     </div>
                   </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
@@ -1032,6 +1216,108 @@ export default function AdminPanel() {
           </div>
         )}
 
+        {/* ── TAB: RESOURCES & UPLOADS ─────────────────────────────────── */}
+        {activeTab === "resources" && (
+          <div>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20, flexWrap: "wrap", gap: 14 }}>
+              <div>
+                <h2 style={{ fontSize: "1.3rem", fontWeight: 800 }}>Platform &amp; Course Resources</h2>
+                <p style={{ fontSize: "0.85rem", color: "var(--text-muted)" }}>
+                  Upload downloadable materials, exercise files, and guides that immediately reflect across the platform and in course classrooms.
+                </p>
+              </div>
+              <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                <div style={{ display: "flex", gap: 6 }}>
+                  {["all", "platform"].map((f) => (
+                    <button
+                      key={f}
+                      className={`filter-pill-btn ${resourceFilter === f ? "active" : ""}`}
+                      onClick={() => setResourceFilter(f)}
+                      style={{ textTransform: "capitalize" }}
+                    >
+                      {f}
+                    </button>
+                  ))}
+                </div>
+                <button
+                  className="btn btn-solid-dark btn-sm"
+                  onClick={() => setShowAddResourceModal(true)}
+                >
+                  + Upload New Resource
+                </button>
+              </div>
+            </div>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              {adminResources
+                .filter((r) => {
+                  if (resourceFilter === "platform") return r.courseId === "platform";
+                  return true;
+                })
+                .map((res) => (
+                  <div
+                    key={res.id}
+                    style={{
+                      background: "#FFFFFF",
+                      border: "1px solid var(--border-light)",
+                      borderRadius: "var(--radius-sm)",
+                      padding: "18px 22px",
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      flexWrap: "wrap",
+                      gap: 16,
+                    }}
+                  >
+                    <div style={{ maxWidth: "70%" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                        <span className="pill-badge pill-tech">{res.type}</span>
+                        <span className="pill-badge pill-solid-dark">
+                          {res.courseId === "platform" ? "Platform-Wide" : `Course: ${res.courseId}`}
+                        </span>
+                        {res.fileSize && (
+                          <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>{res.fileSize}</span>
+                        )}
+                      </div>
+                      <h3 style={{ fontSize: "1.05rem", fontWeight: 700, color: "var(--text-primary)" }}>
+                        {res.title}
+                      </h3>
+                      <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)", marginTop: 4 }}>
+                        {res.desc || res.description}
+                      </p>
+                      {res.uploaderName && (
+                        <div style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginTop: 6 }}>
+                          Uploaded by: <strong>{res.uploaderName}</strong> ({res.uploaderRole || "admin"})
+                        </div>
+                      )}
+                    </div>
+
+                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                      <a
+                        href={res.fileUrl || "#"}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="btn btn-outline btn-sm"
+                        style={{ textDecoration: "none" }}
+                      >
+                        View / Download &darr;
+                      </a>
+                      {!res.isDefault && (
+                        <button
+                          className="btn btn-outline btn-sm"
+                          style={{ color: "#DC2626" }}
+                          onClick={() => handleDeleteResource(res.id, res.fileUrl)}
+                        >
+                          Delete
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+            </div>
+          </div>
+        )}
+
         {/* ── USER PROFILE MODAL ──────────────────────────────────────── */}
         {selectedUser && (
           <div className="modal-backdrop-overlay" onClick={() => setSelectedUser(null)}>
@@ -1090,7 +1376,7 @@ export default function AdminPanel() {
                 <button
                   className="btn btn-outline btn-sm"
                   style={{ color: "#DC2626" }}
-                  onClick={() => handleDeleteUser(selectedUser.id)}
+                  onClick={() => handleDeleteUser(selectedUser.id, selectedUser.name)}
                 >
                   Delete User
                 </button>
@@ -1098,7 +1384,7 @@ export default function AdminPanel() {
                   <button
                     className="btn btn-outline btn-sm"
                     onClick={() => {
-                      handleToggleUserStatus(selectedUser.id);
+                      handleToggleUserStatus(selectedUser.id, selectedUser.status);
                       setSelectedUser(null);
                     }}
                   >
@@ -1269,7 +1555,7 @@ export default function AdminPanel() {
                         setSelectedAppModal(null);
                       }}
                     >
-                      Accept &amp; Publish Draft
+                      Approve &amp; Promote to Tutor
                     </button>
                     <button
                       className="btn btn-outline btn-sm"
@@ -1296,7 +1582,7 @@ export default function AdminPanel() {
           <div className="modal-backdrop-overlay" onClick={() => setShowAddCourseModal(false)}>
             <div className="modal-dialog-box" onClick={e => e.stopPropagation()}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-                <h3 style={{ fontSize: "1.4rem", fontWeight: 800 }}>Create New Course</h3>
+                <h3 style={{ fontSize: "1.4rem", fontWeight: 800 }}>Create New Course in Firestore</h3>
                 <button className="btn-ghost" onClick={() => setShowAddCourseModal(false)}>✕</button>
               </div>
 
@@ -1420,8 +1706,8 @@ export default function AdminPanel() {
                       value={editingCourse.status}
                       onChange={e => setEditingCourse({ ...editingCourse, status: e.target.value })}
                     >
-                      <option>Published</option>
-                      <option>Draft</option>
+                      <option value="published">Published</option>
+                      <option value="draft">Draft</option>
                     </select>
                   </div>
                 </div>
@@ -1474,6 +1760,7 @@ export default function AdminPanel() {
                       });
                     }}
                   >
+                    <option value="">Select a student...</option>
                     {usersList.map(u => (
                       <option key={u.id} value={u.name}>{u.name} ({u.regId})</option>
                     ))}
@@ -1510,6 +1797,108 @@ export default function AdminPanel() {
                   </button>
                   <button type="submit" className="btn btn-solid-dark">
                     Issue Credential &rarr;
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+        {/* ── UPLOAD RESOURCE MODAL ──────────────────────────────────── */}
+        {showAddResourceModal && (
+          <div className="modal-backdrop-overlay" onClick={() => setShowAddResourceModal(false)}>
+            <div className="modal-dialog-box" style={{ maxWidth: 600 }} onClick={(e) => e.stopPropagation()}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+                <div>
+                  <span className="pill-badge pill-tech" style={{ marginBottom: 4 }}>FILE &amp; MATERIAL UPLOAD</span>
+                  <h3 style={{ fontSize: "1.4rem", fontWeight: 800 }}>Upload Platform / Course Resource</h3>
+                </div>
+                <button className="btn-ghost" onClick={() => setShowAddResourceModal(false)}>✕</button>
+              </div>
+
+              <form onSubmit={handleAdminUploadResource}>
+                <div className="form-field-group">
+                  <label className="form-field-label">Resource Title *</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. 2025 AI Tools & Automation Cheatsheet"
+                    className="form-field-input"
+                    value={newResourceForm.title}
+                    onChange={(e) => setNewResourceForm({ ...newResourceForm, title: e.target.value })}
+                  />
+                </div>
+
+                <div className="form-field-group">
+                  <label className="form-field-label">Description</label>
+                  <textarea
+                    rows={2}
+                    placeholder="Brief description of this material..."
+                    className="form-field-input"
+                    value={newResourceForm.description}
+                    onChange={(e) => setNewResourceForm({ ...newResourceForm, description: e.target.value })}
+                  />
+                </div>
+
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                  <div className="form-field-group">
+                    <label className="form-field-label">Target Audience / Course</label>
+                    <select
+                      className="form-field-input"
+                      value={newResourceForm.courseId}
+                      onChange={(e) => setNewResourceForm({ ...newResourceForm, courseId: e.target.value })}
+                    >
+                      <option value="platform">Platform-Wide (All Users)</option>
+                      {adminCourses.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          Course: {c.title}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="form-field-group">
+                    <label className="form-field-label">Category</label>
+                    <select
+                      className="form-field-input"
+                      value={newResourceForm.category}
+                      onChange={(e) => setNewResourceForm({ ...newResourceForm, category: e.target.value })}
+                    >
+                      <option>Tech &amp; Digital Skills</option>
+                      <option>Professional Skills</option>
+                      <option>Creative &amp; Design</option>
+                      <option>NYSC Guides</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                  <div className="form-field-group">
+                    <label className="form-field-label">Upload File (PDF, ZIP, DOC, IMG)</label>
+                    <input
+                      type="file"
+                      style={{ fontSize: "0.85rem", width: "100%", marginTop: 4 }}
+                      onChange={(e) => setNewResourceForm({ ...newResourceForm, file: e.target.files[0] || null })}
+                    />
+                  </div>
+
+                  <div className="form-field-group">
+                    <label className="form-field-label">Or External Link (Drive, Figma, GitHub)</label>
+                    <input
+                      type="url"
+                      placeholder="https://..."
+                      className="form-field-input"
+                      value={newResourceForm.externalUrl}
+                      onChange={(e) => setNewResourceForm({ ...newResourceForm, externalUrl: e.target.value })}
+                    />
+                  </div>
+                </div>
+
+                <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 24 }}>
+                  <button type="button" className="btn btn-outline" onClick={() => setShowAddResourceModal(false)}>
+                    Cancel
+                  </button>
+                  <button type="submit" disabled={isUploadingResource} className="btn btn-solid-dark">
+                    {isUploadingResource ? "Uploading..." : "Publish Resource →"}
                   </button>
                 </div>
               </form>

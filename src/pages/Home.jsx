@@ -2,159 +2,8 @@ import { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { getUserActivity } from "../contexts/userActivity";
-
-export const COURSES_CATALOG = [
-  {
-    id: "ai-essentials",
-    title: "AI Essentials & Automation",
-    category: "Tech & Digital Skills",
-    badge: "TECHNOLOGY",
-    badgeClass: "pill-tech",
-    level: "Beginner → Intermediate",
-    duration: "6h 40m",
-    modulesCount: 12,
-    rating: 4.9,
-    reviewsCount: "2.5k",
-    students: 2540,
-    image: "https://images.unsplash.com/photo-1677442136019-21780ecad995?w=400&auto=format&fit=crop&q=70",
-    description: "Learn how AI works and how to use modern AI tools to automate tasks and workflows."
-  },
-  {
-    id: "computer-basics",
-    title: "Introduction to Computer & Basic Computing",
-    category: "Tech & Digital Skills",
-    badge: "TECHNOLOGY",
-    badgeClass: "pill-tech",
-    level: "Beginner",
-    duration: "6h 30m",
-    modulesCount: 8,
-    rating: 4.8,
-    reviewsCount: "1.2k",
-    students: 1820,
-    image: "https://images.unsplash.com/photo-1517694712202-14dd9538aa97?w=400&auto=format&fit=crop&q=70",
-    description: "Master everyday computer literacy, operating systems, file organization, and essential software."
-  },
-  {
-    id: "photography",
-    title: "Photography Fundamentals & Lighting",
-    category: "Tech & Digital Skills",
-    badge: "CREATIVE",
-    badgeClass: "pill-creative",
-    level: "Beginner",
-    duration: "6h 20m",
-    modulesCount: 8,
-    rating: 4.7,
-    reviewsCount: "1.1k",
-    students: 1140,
-    image: "https://images.unsplash.com/photo-1516035069371-29a1b244cc32?w=400&auto=format&fit=crop&q=70",
-    description: "Camera mechanics, composition guidelines, exposure triangles, and studio lighting techniques."
-  },
-  {
-    id: "videography",
-    title: "Videography & Video Editing Mastery",
-    category: "Tech & Digital Skills",
-    badge: "CREATIVE",
-    badgeClass: "pill-creative",
-    level: "Intermediate",
-    duration: "10h 20m",
-    modulesCount: 12,
-    rating: 4.8,
-    reviewsCount: "1.6k",
-    students: 1980,
-    image: "https://images.unsplash.com/photo-1574717024653-61fd2cf4d44d?w=400&auto=format&fit=crop&q=70",
-    description: "Professional video capture, Premiere Pro & DaVinci workflows, color grading, and cinematic storytelling."
-  },
-  {
-    id: "sound-production",
-    title: "Sound Production & Audio Engineering",
-    category: "Tech & Digital Skills",
-    badge: "AUDIO",
-    badgeClass: "pill-audio",
-    level: "Beginner",
-    duration: "6h 15m",
-    modulesCount: 10,
-    rating: 4.8,
-    reviewsCount: "890",
-    students: 920,
-    image: "https://images.unsplash.com/photo-1598488035139-bdbb2231ce04?w=400&auto=format&fit=crop&q=70",
-    description: "Studio microphones, DAW audio editing, mixing, mastering, and sound acoustics fundamentals."
-  },
-  {
-    id: "graphic-design",
-    title: "Graphic Design Fundamentals & Figma",
-    category: "Tech & Digital Skills",
-    badge: "DESIGN",
-    badgeClass: "pill-design",
-    level: "Beginner",
-    duration: "8h 30m",
-    modulesCount: 12,
-    rating: 4.9,
-    reviewsCount: "2.1k",
-    students: 2300,
-    image: "https://images.unsplash.com/photo-1626785774573-4b799315345d?w=400&auto=format&fit=crop&q=70",
-    description: "Color theory, typography hierarchy, branding identity, and modern digital UI illustration."
-  },
-  {
-    id: "social-media",
-    title: "Social Media Strategy & Content Growth",
-    category: "Tech & Digital Skills",
-    badge: "MARKETING",
-    badgeClass: "pill-marketing",
-    level: "Beginner",
-    duration: "7h 40m",
-    modulesCount: 10,
-    rating: 4.7,
-    reviewsCount: "1.4k",
-    students: 1540,
-    image: "https://images.unsplash.com/photo-1611162617474-5b21e879e113?w=400&auto=format&fit=crop&q=70",
-    description: "Audience growth strategies, organic viral video distribution, copywriting, and brand partnerships."
-  },
-  {
-    id: "livestreaming",
-    title: "Live Streaming & Broadcast Production",
-    category: "Tech & Digital Skills",
-    badge: "LIVE",
-    badgeClass: "pill-tech",
-    level: "Beginner",
-    duration: "6h 10m",
-    modulesCount: 8,
-    rating: 4.8,
-    reviewsCount: "760",
-    students: 840,
-    image: "https://images.unsplash.com/photo-1542751371-adc38448a05e?w=400&auto=format&fit=crop&q=70",
-    description: "OBS Studio setup, multi-camera switching, audio sync, and interactive audience management."
-  },
-  {
-    id: "broadcasting",
-    title: "Professional Media Broadcasting & Presenting",
-    category: "Professional Skills",
-    badge: "MEDIA",
-    badgeClass: "pill-marketing",
-    level: "Intermediate",
-    duration: "8h 00m",
-    modulesCount: 10,
-    rating: 4.8,
-    reviewsCount: "640",
-    students: 690,
-    image: "https://images.unsplash.com/photo-1589903308904-1010c2294adc?w=400&auto=format&fit=crop&q=70",
-    description: "On-camera articulation, broadcast journalism ethics, voice modulation, and interview moderation."
-  },
-  {
-    id: "project-management",
-    title: "Applied Agile Project Management",
-    category: "Professional Skills",
-    badge: "BUSINESS",
-    badgeClass: "pill-business",
-    level: "Beginner",
-    duration: "9h 30m",
-    modulesCount: 10,
-    rating: 4.9,
-    reviewsCount: "1.8k",
-    students: 2150,
-    image: "https://images.unsplash.com/photo-1454165804606-c3d57bc86b40?w=400&auto=format&fit=crop&q=70",
-    description: "Agile methodologies, sprint cycles, stakeholder management, and project execution frameworks."
-  }
-];
+import { COURSES_CATALOG } from "../data/courses";
+export { COURSES_CATALOG };
 
 export default function Home() {
   const { currentUser } = useAuth();
@@ -224,6 +73,66 @@ export default function Home() {
               >
                 How it works
               </button>
+            </div>
+
+            {/* Stage 10: Two Large Side-by-Side Role Cards */}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginTop: 28, maxWidth: 560 }}>
+              <Link
+                to="/auth"
+                state={{ tab: "student", mode: "signup" }}
+                style={{
+                  background: "#FFFFFF",
+                  border: "2px solid #5624D0",
+                  borderRadius: "12px",
+                  padding: "18px",
+                  textDecoration: "none",
+                  display: "flex",
+                  flexDirection: "column",
+                  justifyContent: "space-between",
+                  transition: "transform 0.2s ease, box-shadow 0.2s ease",
+                }}
+              >
+                <div>
+                  <div style={{ fontSize: "1.4rem", marginBottom: 8 }}>🎓</div>
+                  <div style={{ fontWeight: 800, fontSize: "1.05rem", color: "#5624D0", marginBottom: 4 }}>
+                    I'm a Student
+                  </div>
+                  <div style={{ fontSize: "0.825rem", color: "#64748B", lineHeight: 1.4 }}>
+                    Browse courses and start learning today.
+                  </div>
+                </div>
+                <div style={{ fontSize: "0.825rem", fontWeight: 700, color: "#5624D0", marginTop: 12 }}>
+                  Start Learning &rarr;
+                </div>
+              </Link>
+
+              <Link
+                to="/teach"
+                style={{
+                  background: "#FFFFFF",
+                  border: "2px solid #1C1D1F",
+                  borderRadius: "12px",
+                  padding: "18px",
+                  textDecoration: "none",
+                  display: "flex",
+                  flexDirection: "column",
+                  justifyContent: "space-between",
+                  transition: "transform 0.2s ease, box-shadow 0.2s ease",
+                }}
+              >
+                <div>
+                  <div style={{ fontSize: "1.4rem", marginBottom: 8 }}>💼</div>
+                  <div style={{ fontWeight: 800, fontSize: "1.05rem", color: "#1C1D1F", marginBottom: 4 }}>
+                    I'm a Tutor
+                  </div>
+                  <div style={{ fontSize: "0.825rem", color: "#64748B", lineHeight: 1.4 }}>
+                    Apply to teach your own course.
+                  </div>
+                </div>
+                <div style={{ fontSize: "0.825rem", fontWeight: 700, color: "#1C1D1F", marginTop: 12 }}>
+                  Teach on Peleekings &rarr;
+                </div>
+              </Link>
             </div>
           </div>
 

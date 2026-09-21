@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { collection, addDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "../firebase";
+import { getResources, uploadResource } from "../contexts/resourcesService";
 
 export default function BecomeInstructor() {
   const { currentUser, userProfile } = useAuth();
@@ -25,6 +26,71 @@ export default function BecomeInstructor() {
   const [applied, setApplied] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+
+  // Tutor Resources State
+  const [tutorResources, setTutorResources] = useState([]);
+  const [showResourceForm, setShowResourceForm] = useState(false);
+  const [resourceData, setResourceData] = useState({
+    title: "",
+    description: "",
+    category: "Tech & Digital Skills",
+    courseId: "ai-essentials",
+    externalUrl: "",
+    file: null,
+  });
+  const [uploadingResource, setUploadingResource] = useState(false);
+  const [resourceToast, setResourceToast] = useState("");
+
+  useEffect(() => {
+    getResources("all")
+      .then((res) => {
+        if (res) setTutorResources(res);
+      })
+      .catch((err) => console.warn(err));
+  }, []);
+
+  async function handleTutorUploadResource(e) {
+    e.preventDefault();
+    if (!resourceData.title.trim() || (!resourceData.file && !resourceData.externalUrl.trim())) {
+      alert("Please provide a title and either a file or link.");
+      return;
+    }
+    setUploadingResource(true);
+    try {
+      const created = await uploadResource({
+        file: resourceData.file,
+        title: resourceData.title,
+        description: resourceData.description,
+        category: resourceData.category,
+        courseId: resourceData.courseId,
+        externalUrl: resourceData.externalUrl,
+        user: currentUser
+          ? {
+              uid: currentUser.uid,
+              displayName: currentUser.displayName || userProfile?.fullName || "Tutor",
+              role: userProfile?.role || "tutor",
+            }
+          : null,
+      });
+      setTutorResources((prev) => [created, ...prev]);
+      setShowResourceForm(false);
+      setResourceData({
+        title: "",
+        description: "",
+        category: "Tech & Digital Skills",
+        courseId: "ai-essentials",
+        externalUrl: "",
+        file: null,
+      });
+      setResourceToast("✓ Material uploaded successfully! It now reflects on the course page.");
+      setTimeout(() => setResourceToast(""), 4000);
+    } catch (err) {
+      console.error(err);
+      alert("Failed to upload resource.");
+    } finally {
+      setUploadingResource(false);
+    }
+  }
 
   async function handleApply(e) {
     e.preventDefault();
@@ -205,6 +271,178 @@ export default function BecomeInstructor() {
                     </div>
                   </div>
                 </div>
+              </div>
+            </div>
+
+            {/* ── Tutor Course Resources Management Section ────────────── */}
+            <div style={{ background: "#FFFFFF", border: "1px solid var(--border-light)", borderRadius: "var(--radius-md)", padding: 28, marginBottom: 40 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20, flexWrap: "wrap", gap: 12 }}>
+                <div>
+                  <h2 style={{ fontSize: "1.25rem", fontWeight: 800 }}>Course Resources &amp; Downloads</h2>
+                  <p style={{ color: "var(--text-secondary)", fontSize: "0.875rem" }}>
+                    Upload exercise files, cheatsheets, and lecture notes. These materials immediately reflect in the classroom for enrolled students.
+                  </p>
+                </div>
+                <button
+                  className="btn btn-solid-dark btn-sm"
+                  onClick={() => setShowResourceForm((prev) => !prev)}
+                >
+                  {showResourceForm ? "✕ Close Form" : "+ Upload New Material"}
+                </button>
+              </div>
+
+              {resourceToast && (
+                <div style={{ background: "#ECFDF5", border: "1px solid #A7F3D0", color: "#065F46", padding: "10px 16px", borderRadius: "var(--radius-sm)", fontSize: "0.85rem", marginBottom: 18 }}>
+                  {resourceToast}
+                </div>
+              )}
+
+              {showResourceForm && (
+                <form
+                  onSubmit={handleTutorUploadResource}
+                  style={{
+                    background: "#F8FAFC",
+                    border: "1px solid var(--border-light)",
+                    borderRadius: "var(--radius-sm)",
+                    padding: 20,
+                    marginBottom: 24,
+                  }}
+                >
+                  <h3 style={{ fontSize: "1rem", fontWeight: 700, marginBottom: 14 }}>
+                    Add Learning Material
+                  </h3>
+
+                  <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                    <div>
+                      <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>
+                        MATERIAL TITLE *
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="e.g. Module 2 Hands-on Exercise Files"
+                        value={resourceData.title}
+                        onChange={(e) => setResourceData({ ...resourceData, title: e.target.value })}
+                        className="form-field-input"
+                      />
+                    </div>
+
+                    <div>
+                      <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>
+                        DESCRIPTION
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="What is included in this download?"
+                        value={resourceData.description}
+                        onChange={(e) => setResourceData({ ...resourceData, description: e.target.value })}
+                        className="form-field-input"
+                      />
+                    </div>
+
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                      <div>
+                        <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>
+                          TARGET COURSE
+                        </label>
+                        <select
+                          value={resourceData.courseId}
+                          onChange={(e) => setResourceData({ ...resourceData, courseId: e.target.value })}
+                          className="form-field-input"
+                        >
+                          <option value="ai-essentials">AI Essentials &amp; Automation</option>
+                          <option value="computer-basics">Introduction to Computer</option>
+                          <option value="photography">Photography Fundamentals</option>
+                          <option value="platform">Platform-Wide Resource</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>
+                          ATTACH FILE (PDF, ZIP, DOC, IMG)
+                        </label>
+                        <input
+                          type="file"
+                          onChange={(e) => setResourceData({ ...resourceData, file: e.target.files[0] || null })}
+                          style={{ fontSize: "0.85rem", width: "100%", marginTop: 4 }}
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>
+                        OR EXTERNAL LINK (GOOGLE DRIVE, FIGMA, GITHUB)
+                      </label>
+                      <input
+                        type="url"
+                        placeholder="https://..."
+                        value={resourceData.externalUrl}
+                        onChange={(e) => setResourceData({ ...resourceData, externalUrl: e.target.value })}
+                        className="form-field-input"
+                      />
+                    </div>
+
+                    <button
+                      type="submit"
+                      disabled={uploadingResource}
+                      className="btn btn-solid-dark btn-sm"
+                      style={{ alignSelf: "flex-start", marginTop: 4 }}
+                    >
+                      {uploadingResource ? "Uploading..." : "Publish Material →"}
+                    </button>
+                  </div>
+                </form>
+              )}
+
+              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                {tutorResources.length === 0 ? (
+                  <div style={{ textAlign: "center", color: "var(--text-muted)", padding: 20 }}>
+                    No course resources uploaded yet. Click "+ Upload New Material" to add your first resource.
+                  </div>
+                ) : (
+                  tutorResources.map((res) => (
+                    <div
+                      key={res.id}
+                      style={{
+                        padding: "14px 18px",
+                        border: "1px solid var(--border-light)",
+                        borderRadius: "var(--radius-sm)",
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        background: "#F8FAFC",
+                      }}
+                    >
+                      <div>
+                        <div style={{ fontWeight: 700, fontSize: "0.95rem", color: "var(--text-primary)" }}>
+                          {res.title}
+                        </div>
+                        <div style={{ fontSize: "0.8rem", color: "var(--text-muted)", marginTop: 2 }}>
+                          {res.desc || res.description}
+                        </div>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6 }}>
+                          <span className="pill-badge pill-tech">{res.type}</span>
+                          {res.fileSize && (
+                            <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>{res.fileSize}</span>
+                          )}
+                          <span className="pill-badge pill-solid-dark" style={{ fontSize: "0.7rem" }}>
+                            {res.courseId === "platform" ? "Platform-wide" : res.courseId}
+                          </span>
+                        </div>
+                      </div>
+
+                      <a
+                        href={res.fileUrl || "#"}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="btn btn-outline btn-sm"
+                        style={{ textDecoration: "none" }}
+                      >
+                        Download &darr;
+                      </a>
+                    </div>
+                  ))
+                )}
               </div>
             </div>
           </div>

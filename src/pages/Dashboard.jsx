@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
-import { getUserActivity, submitAssignment } from "../contexts/userActivity";
+import { getUserActivity, submitAssignment, getUserEnrollments } from "../contexts/userActivity";
+import { COURSES_CATALOG } from "../data/courses";
 
 export default function Dashboard() {
   const { currentUser, userProfile, logout } = useAuth();
@@ -12,6 +13,7 @@ export default function Dashboard() {
   const [showMobileSidebar, setShowMobileSidebar] = useState(false);
   const [showPathModal, setShowPathModal] = useState(false);
   const [toastMessage, setToastMessage] = useState(location.state?.welcomeToast || "");
+  const [showTutorBanner, setShowTutorBanner] = useState(location.state?.showTutorBanner || false);
 
   // Auto-dismiss welcome toast after 4 seconds
   useEffect(() => {
@@ -29,7 +31,7 @@ export default function Dashboard() {
   const isNonCorper = userProfile?.studentType === "non_corper";
   const userName = userProfile?.fullName || currentUser?.displayName || currentUser?.email?.split("@")[0] || "Learner";
   const firstName = userProfile?.firstName || (userName.split(" ").length > 1 ? userName.split(" ")[0] : userName) || "Learner";
-  const regCode = userProfile?.regNumber || (isNonCorper ? "1234NL" : "CL1399");
+  const regCode = userProfile?.regNumber || "Pending assignment";
   const email = currentUser?.email || userProfile?.email || "";
   const nyscCode = isNonCorper ? "Not Applicable (Non-Corper)" : (userProfile?.nyscStateCode || "Not provided");
 
@@ -39,6 +41,7 @@ export default function Dashboard() {
   }
 
   const [userActivity, setUserActivity] = useState(() => getUserActivity(currentUser?.uid));
+  const [liveEnrollments, setLiveEnrollments] = useState([]);
 
   useEffect(() => {
     setUserActivity(getUserActivity(currentUser?.uid));
@@ -51,8 +54,33 @@ export default function Dashboard() {
     return () => window.removeEventListener("peleekings_activity_updated", handleUpdate);
   }, [currentUser]);
 
-  // Active courses enrolled from user activity
-  const enrolledCourses = userActivity?.enrolledCourses || [];
+  useEffect(() => {
+    if (!currentUser?.uid) return;
+    getUserEnrollments(currentUser.uid)
+      .then((enrollments) => {
+        if (enrollments && enrollments.length > 0) {
+          const mapped = enrollments.map((enr) => {
+            const catalogItem = COURSES_CATALOG.find((c) => c.id === enr.courseId) || {};
+            return {
+              id: enr.courseId,
+              title: catalogItem.title || enr.courseTitle || enr.courseId,
+              type: enr.experienceType === "hands-on" ? "Hands-on Practical" : "Online",
+              progress: enr.progressPercent || 0,
+              currentModule: `${(enr.completedItemIds || []).length} lessons completed`,
+              image:
+                catalogItem.image ||
+                "https://images.unsplash.com/photo-1677442136019-21780ecad995?w=500&auto=format&fit=crop&q=80",
+              enrolledAt: enr.enrolledAt?.toDate ? enr.enrolledAt.toDate().toISOString() : new Date().toISOString(),
+            };
+          });
+          setLiveEnrollments(mapped);
+        }
+      })
+      .catch((err) => console.warn("Could not fetch live enrollments:", err));
+  }, [currentUser]);
+
+  // Active courses enrolled: prioritize live Firestore enrollments, fall back to cached
+  const enrolledCourses = liveEnrollments.length > 0 ? liveEnrollments : (userActivity?.enrolledCourses || []);
 
   const weeklyActivityData = userActivity?.weeklyActivity || [
     { day: "Mon", hours: 45, label: "45m" },
@@ -115,7 +143,7 @@ export default function Dashboard() {
     return item;
   });
 
-  function handleAssignmentUploadSubmit(e) {
+  async function handleAssignmentUploadSubmit(e) {
     e.preventDefault();
     if (!uploadFile && !uploadLink.trim()) {
       alert("Please choose a file to upload or provide a project link.");
@@ -124,8 +152,9 @@ export default function Dashboard() {
 
     setIsSubmittingAssignment(true);
 
-    setTimeout(() => {
+    try {
       const submissionData = {
+        file: uploadFile || null,
         fileName: uploadFile ? uploadFile.name : null,
         fileSize: uploadFile ? `${(uploadFile.size / 1024).toFixed(1)} KB` : null,
         fileType: uploadFile ? uploadFile.type : null,
@@ -133,17 +162,21 @@ export default function Dashboard() {
         notes: uploadNotes.trim() || null,
         submittedAt: new Date().toISOString(),
         studentName: userName,
-        studentEmail: email
+        studentEmail: email,
       };
 
-      submitAssignment(currentUser?.uid, activeUploadAssignment.id, submissionData);
-      setIsSubmittingAssignment(false);
+      await submitAssignment(currentUser?.uid, activeUploadAssignment.id, submissionData);
       triggerToast(`Assignment "${activeUploadAssignment.title}" submitted successfully!`);
       setActiveUploadAssignment(null);
       setUploadFile(null);
       setUploadLink("");
       setUploadNotes("");
-    }, 600);
+    } catch (err) {
+      console.error("Assignment submission error:", err);
+      triggerToast("Failed to submit assignment. Please try again.");
+    } finally {
+      setIsSubmittingAssignment(false);
+    }
   }
 
   async function handleLogout() {
@@ -291,6 +324,45 @@ export default function Dashboard() {
           </div>
         </div>
 
+        {/* Stage 6: Dismissible Tutor Apply Banner */}
+        {showTutorBanner && (
+          <div
+            style={{
+              background: "#F3EEFC",
+              border: "1px solid #D8C7F8",
+              borderRadius: "10px",
+              padding: "14px 20px",
+              marginBottom: 20,
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              gap: 16,
+            }}
+          >
+            <div style={{ fontSize: "0.9rem", color: "#5624D0" }}>
+              <strong>Want to teach on Peleekings?</strong> Share your expertise with hundreds of students.{" "}
+              <Link to="/teach" style={{ color: "#5624D0", fontWeight: 700, textDecoration: "underline" }}>
+                Apply here &rarr;
+              </Link>
+            </div>
+            <button
+              onClick={() => setShowTutorBanner(false)}
+              style={{
+                background: "none",
+                border: "none",
+                color: "#5624D0",
+                cursor: "pointer",
+                fontSize: "1.1rem",
+                lineHeight: 1,
+                padding: "4px 8px",
+              }}
+              title="Dismiss"
+            >
+              ✕
+            </button>
+          </div>
+        )}
+
         {/* ── TAB: OVERVIEW / DASHBOARD ──────────────────────────────── */}
         {activeNav === "dashboard" && (
           <>
@@ -342,7 +414,7 @@ export default function Dashboard() {
 
                     <button
                       className="btn btn-solid-dark btn-sm"
-                      onClick={() => navigate(`/course/${enrolledCourses[0].id}`)}
+                      onClick={() => navigate(`/course/${enrolledCourses[0].id}`, { state: { classroom: true } })}
                     >
                       Continue Learning &rarr;
                     </button>
@@ -422,7 +494,7 @@ export default function Dashboard() {
                         background: "#F8FAFC",
                         cursor: "pointer"
                       }}
-                      onClick={() => navigate(`/course/${c.id}`)}
+                      onClick={() => navigate(`/course/${c.id}`, { state: { classroom: true } })}
                     >
                       <div style={{ height: 90, borderRadius: 6, overflow: "hidden", marginBottom: 10, background: "#0F172A" }}>
                         <img src={c.image} alt={c.title} style={{ width: "100%", height: "100%", objectFit: "cover" }} />

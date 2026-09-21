@@ -1,24 +1,35 @@
 import { useState, useEffect } from "react";
-import { useParams, useNavigate, Link } from "react-router-dom";
+import { useParams, useNavigate, useLocation, Link } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
-import { COURSES_CATALOG } from "./Home";
-import { getUserActivity, enrollInCourse, toggleLessonCompletion } from "../contexts/userActivity";
+import { COURSES_CATALOG } from "../data/courses";
+import { collection, query, orderBy, getDocs, addDoc, serverTimestamp } from "firebase/firestore";
+import { db } from "../firebase";
+import {
+  getCourseEnrollment,
+  enrollInCourse,
+  toggleLessonCompletion,
+  submitAssignment,
+  getAssignmentSubmission,
+  submitTest,
+  getTestSubmission,
+} from "../contexts/userActivity";
+import { getResources, uploadResource } from "../contexts/resourcesService";
 
 const COURSE_MODULES = [
   {
     id: "m1",
     title: "Module 01 - Understanding AI",
     lessons: [
-      { id: "l1", title: "1. What is Artificial Intelligence", duration: "10 min", completed: true, type: "video" },
-      { id: "l2", title: "2. History of AI & Machine Learning", duration: "15 min", completed: true, type: "video" },
-      { id: "l3", title: "3. AI in the Real World", duration: "18 min", completed: true, type: "reading" },
+      { id: "l1", title: "1. What is Artificial Intelligence", duration: "10 min", completed: false, type: "video" },
+      { id: "l2", title: "2. History of AI & Machine Learning", duration: "15 min", completed: false, type: "video" },
+      { id: "l3", title: "3. AI in the Real World", duration: "18 min", completed: false, type: "reading" },
     ]
   },
   {
     id: "m2",
     title: "Module 02 - AI Tools",
     lessons: [
-      { id: "l4", title: "4. Popular AI Tools Overview", duration: "14 min", completed: true, type: "video" },
+      { id: "l4", title: "4. Popular AI Tools Overview", duration: "14 min", completed: false, type: "video" },
       { id: "l5", title: "5. Using ChatGPT for Work", duration: "12 min", completed: false, type: "video" },
       { id: "l6", title: "6. Automation with Zapier & Make", duration: "25 min", completed: false, locked: false, type: "assignment" },
     ]
@@ -36,30 +47,22 @@ const COURSE_MODULES = [
 export default function CoursePage() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { currentUser } = useAuth();
+  const location = useLocation();
+  const { currentUser, userProfile } = useAuth();
 
   const courseData = COURSES_CATALOG.find(c => c.id === id) || COURSES_CATALOG[0];
 
-  const userActivity = getUserActivity(currentUser?.uid);
-  const isUserEnrolled = !!userActivity?.enrolledCourses?.some(c => c.id === courseData.id);
+  // Firestore-backed enrollment state (source of truth)
+  const [enrollment, setEnrollment] = useState(null);
+  const [isEnrolled, setIsEnrolled] = useState(false);
+  const [loadingEnrollment, setLoadingEnrollment] = useState(true);
 
-  // State: enrolled vs classroom view
-  const [isEnrolled, setIsEnrolled] = useState(isUserEnrolled);
-  const [viewMode, setViewMode] = useState(isUserEnrolled ? "classroom" : "detail");
+  const [viewMode, setViewMode] = useState(location.state?.classroom ? "classroom" : "detail");
   const [selectedExperience, setSelectedExperience] = useState("online"); // "online" or "hands-on"
   
   // Classroom lesson state with saved progress
-  const completedLessonIds = new Set(userActivity?.completedLessons?.[courseData.id] || ["l1", "l2", "l3"]);
-  const [modules, setModules] = useState(() =>
-    COURSE_MODULES.map(mod => ({
-      ...mod,
-      lessons: mod.lessons.map(les => ({
-        ...les,
-        completed: completedLessonIds.has(les.id)
-      }))
-    }))
-  );
-  const [activeLessonId, setActiveLessonId] = useState("l5");
+  const [modules, setModules] = useState(COURSE_MODULES);
+  const [activeLessonId, setActiveLessonId] = useState("l1");
   const [activeTab, setActiveTab] = useState("Overview");
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
@@ -67,12 +70,225 @@ export default function CoursePage() {
   const [toastMessage, setToastMessage] = useState("");
   const [showMobileCurriculum, setShowMobileCurriculum] = useState(false);
 
-  // Discussion state
-  const [comments, setComments] = useState([
-    { id: 1, author: "Esther James", time: "1h ago", text: "The breakdown of few-shot prompt chaining was exceptionally clear. Loved the Zapier connector pattern!" },
-    { id: 2, author: "David Okafor", time: "3h ago", text: "Are the exercise files compatible with both Windows and Mac?" }
-  ]);
+  // Assignment & Test submission state
+  const [assignmentContent, setAssignmentContent] = useState("");
+  const [assignmentSubmitting, setAssignmentSubmitting] = useState(false);
+  const [currentSubmission, setCurrentSubmission] = useState(null);
+  const [testAnswers, setTestAnswers] = useState({});
+  const [testSubmitting, setTestSubmitting] = useState(false);
+  const [currentTestSubmission, setCurrentTestSubmission] = useState(null);
+
+  // Discussion state — loaded from Firestore
+  const [comments, setComments] = useState([]);
   const [newComment, setNewComment] = useState("");
+
+  // Announcements state
+  const [announcements, setAnnouncements] = useState([]);
+  const [showAddAnnouncement, setShowAddAnnouncement] = useState(false);
+  const [announcementForm, setAnnouncementForm] = useState({ title: "", body: "" });
+  const [postingAnnouncement, setPostingAnnouncement] = useState(false);
+
+  // Test engine state (one question at a time)
+  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
+  const [testScore, setTestScore] = useState(null);
+
+  useEffect(() => {
+    async function loadAnnouncements() {
+      try {
+        const snap = await getDocs(
+          query(collection(db, "courses", courseData.id, "announcements"), orderBy("createdAt", "desc"))
+        );
+        if (!snap.empty) {
+          setAnnouncements(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+        } else {
+          setAnnouncements([
+            {
+              id: "a1",
+              title: `Welcome to ${courseData.title}!`,
+              body: "We are thrilled to have you here. Please review the course syllabus and download lecture notes from the Resources tab.",
+              postedBy: "Peleekings Academic Team",
+              createdAt: { seconds: Date.now() / 1000 - 86400 },
+            },
+            {
+              id: "a2",
+              title: "Weekly Office Hours & Live Q&A",
+              body: "Join us this Thursday at 4 PM GMT for a live walkthrough of the capstone project requirements and assignment deliverables.",
+              postedBy: "Lead Instructor",
+              createdAt: { seconds: Date.now() / 1000 - 172800 },
+            },
+          ]);
+        }
+      } catch (e) {
+        setAnnouncements([
+          {
+            id: "a1",
+            title: `Welcome to ${courseData.title}!`,
+            body: "We are thrilled to have you here. Please review the course syllabus and download lecture notes from the Resources tab.",
+            postedBy: "Peleekings Academic Team",
+            createdAt: { seconds: Date.now() / 1000 - 86400 },
+          },
+        ]);
+      }
+    }
+    loadAnnouncements();
+  }, [courseData.id]);
+
+  // Load comments from Firestore
+  useEffect(() => {
+    let isMounted = true;
+    async function loadComments() {
+      try {
+        const snap = await getDocs(
+          query(collection(db, "courses", courseData.id, "comments"), orderBy("createdAt", "desc"))
+        );
+        if (isMounted && !snap.empty) {
+          setComments(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+        } else if (isMounted) {
+          // Seed with default sample comments so the UI is never empty
+          setComments([
+            { id: "c_default_1", author: "Esther James", time: "1h ago", text: "The breakdown of few-shot prompt chaining was exceptionally clear. Loved the Zapier connector pattern!" },
+            { id: "c_default_2", author: "David Okafor", time: "3h ago", text: "Are the exercise files compatible with both Windows and Mac?" },
+          ]);
+        }
+      } catch (err) {
+        console.warn("Could not load comments:", err);
+        if (isMounted) {
+          setComments([
+            { id: "c_default_1", author: "Esther James", time: "1h ago", text: "The breakdown of few-shot prompt chaining was exceptionally clear!" },
+          ]);
+        }
+      }
+    }
+    loadComments();
+    return () => { isMounted = false; };
+  }, [courseData.id]);
+
+  // Query Firestore for user's enrollment
+  useEffect(() => {
+    let isMounted = true;
+    async function fetchEnrollment() {
+      if (!currentUser?.uid) {
+        setIsEnrolled(false);
+        setEnrollment(null);
+        setLoadingEnrollment(false);
+        return;
+      }
+      setLoadingEnrollment(true);
+      try {
+        const enr = await getCourseEnrollment(currentUser.uid, courseData.id);
+        if (isMounted) {
+          if (enr && enr.status === "active") {
+            setEnrollment(enr);
+            setIsEnrolled(true);
+            const completedSet = new Set(enr.completedItemIds || []);
+            setModules(prev =>
+              prev.map(mod => ({
+                ...mod,
+                lessons: mod.lessons.map(les => ({
+                  ...les,
+                  completed: completedSet.has(les.id)
+                }))
+              }))
+            );
+          } else {
+            setEnrollment(null);
+            setIsEnrolled(false);
+          }
+        }
+      } catch (err) {
+        console.warn("Error fetching enrollment from Firestore:", err);
+      } finally {
+        if (isMounted) setLoadingEnrollment(false);
+      }
+    }
+    fetchEnrollment();
+    return () => { isMounted = false; };
+  }, [currentUser?.uid, courseData.id]);
+
+  // Enter classroom mode automatically if navigated from Dashboard with classroom state
+  useEffect(() => {
+    if (location.state?.classroom && isEnrolled) {
+      setViewMode("classroom");
+    }
+  }, [location.state?.classroom, isEnrolled]);
+
+  // Fetch submissions when active lesson changes — dynamic by lesson type
+  useEffect(() => {
+    let isMounted = true;
+    async function loadSubmission() {
+      if (!currentUser?.uid || !isEnrolled) return;
+      const activeLesson = modules.flatMap(m => m.lessons).find(l => l.id === activeLessonId);
+      if (!activeLesson) return;
+      if (activeLesson.type === "assignment") {
+        const sub = await getAssignmentSubmission(currentUser.uid, activeLessonId);
+        if (isMounted) setCurrentSubmission(sub);
+      } else if (activeLesson.type === "test") {
+        const sub = await getTestSubmission(currentUser.uid, activeLessonId);
+        if (isMounted) setCurrentTestSubmission(sub);
+      }
+    }
+    loadSubmission();
+    return () => { isMounted = false; };
+  }, [currentUser?.uid, activeLessonId, isEnrolled, modules]);
+
+  // Live Course Resources State
+  const [courseResources, setCourseResources] = useState([]);
+  const [showResourceUpload, setShowResourceUpload] = useState(false);
+  const [resourceUploadData, setResourceUploadData] = useState({
+    title: "",
+    description: "",
+    file: null,
+    externalUrl: "",
+  });
+  const [isUploadingResource, setIsUploadingResource] = useState(false);
+
+  useEffect(() => {
+    if (courseData?.id) {
+      getResources(courseData.id)
+        .then((res) => {
+          if (res) setCourseResources(res);
+        })
+        .catch((err) => console.warn("Failed to load course resources:", err));
+    }
+  }, [courseData?.id, activeTab]);
+
+  async function handleUploadCourseResource(e) {
+    e.preventDefault();
+    if (!resourceUploadData.title.trim() || (!resourceUploadData.file && !resourceUploadData.externalUrl.trim())) {
+      triggerToast("Please provide a title and either a file or link.");
+      return;
+    }
+
+    setIsUploadingResource(true);
+    try {
+      const newRes = await uploadResource({
+        file: resourceUploadData.file,
+        title: resourceUploadData.title,
+        description: resourceUploadData.description,
+        category: courseData.category || "Tech & Digital Skills",
+        courseId: courseData.id,
+        externalUrl: resourceUploadData.externalUrl,
+        user: currentUser
+          ? {
+              uid: currentUser.uid,
+              displayName: currentUser.displayName || userProfile?.fullName,
+              email: currentUser.email,
+              role: userProfile?.role,
+            }
+          : null,
+      });
+
+      setCourseResources((prev) => [newRes, ...prev]);
+      setResourceUploadData({ title: "", description: "", file: null, externalUrl: "" });
+      setShowResourceUpload(false);
+      triggerToast("✓ Course resource uploaded and reflected on page!");
+    } catch (err) {
+      console.error("Failed to upload course resource:", err);
+      triggerToast("Failed to upload resource. Please check file permissions.");
+    } finally {
+      setIsUploadingResource(false);
+    }
+  }
 
   function triggerToast(msg) {
     setToastMessage(msg);
@@ -95,26 +311,156 @@ export default function CoursePage() {
   const completedCount = allLessons.filter(l => l.completed).length;
   const progressPercent = Math.round((completedCount / allLessons.length) * 100);
 
-  function toggleLessonComplete(lessonId) {
-    setModules(prev =>
-      prev.map(mod => ({
-        ...mod,
-        lessons: mod.lessons.map(les =>
-          les.id === lessonId ? { ...les, completed: !les.completed } : les
-        )
-      }))
-    );
-    toggleLessonCompletion(currentUser?.uid, courseData.id, lessonId, allLessons.length);
-    const lessonObj = allLessons.find(l => l.id === lessonId);
-    triggerToast(lessonObj && !lessonObj.completed ? "✓ Lesson marked as complete!" : "Lesson marked as incomplete");
+  async function toggleLessonComplete(lessonId) {
+    if (!isEnrolled || !currentUser?.uid) {
+      triggerToast("Please enroll in this course to track your progress.");
+      return;
+    }
+
+    try {
+      const res = await toggleLessonCompletion(currentUser.uid, courseData.id, lessonId, allLessons.length);
+      if (res) {
+        const completedSet = new Set(res.completedItemIds);
+        setModules(prev =>
+          prev.map(mod => ({
+            ...mod,
+            lessons: mod.lessons.map(les =>
+              les.id === lessonId ? { ...les, completed: completedSet.has(les.id) } : les
+            )
+          }))
+        );
+        const isNowCompleted = completedSet.has(lessonId);
+        triggerToast(isNowCompleted ? "✓ Lesson marked as complete!" : "Lesson marked as incomplete");
+      }
+    } catch (err) {
+      console.error(err);
+      triggerToast("Failed to update lesson progress in Firestore.");
+    }
   }
 
-  function handleEnroll(experienceType) {
+  async function handleEnroll(experienceType) {
+    if (!currentUser) {
+      navigate("/auth", { state: { from: `/course/${courseData.id}` } });
+      return;
+    }
+
     setSelectedExperience(experienceType);
-    setIsEnrolled(true);
-    enrollInCourse(currentUser?.uid, courseData.id, experienceType);
-    triggerToast(`🎉 Successfully enrolled in ${experienceType === "online" ? "Online Classes" : "Hands-on Training"}!`);
-    setTimeout(() => setViewMode("classroom"), 600);
+    try {
+      const res = await enrollInCourse(currentUser.uid, courseData.id, experienceType);
+      setEnrollment(res);
+      setIsEnrolled(true);
+      triggerToast(`🎉 Successfully enrolled in ${experienceType === "online" ? "Online Classes" : "Hands-on Training"}!`);
+      setViewMode("classroom");
+    } catch (err) {
+      console.error("Enrollment error:", err);
+      triggerToast("Enrollment failed. Please try again.");
+    }
+  }
+
+  async function handleAssignmentSubmit(e) {
+    e.preventDefault();
+    if (!assignmentContent.trim()) return;
+    setAssignmentSubmitting(true);
+    try {
+      const res = await submitAssignment(currentUser.uid, courseData.id, currentLesson.id, {
+        content: assignmentContent.trim(),
+      });
+      setCurrentSubmission(res);
+      setAssignmentContent("");
+      triggerToast("✓ Assignment submitted successfully!");
+    } catch (err) {
+      console.error(err);
+      triggerToast("Failed to submit assignment.");
+    } finally {
+      setAssignmentSubmitting(false);
+    }
+  }
+
+  const TEST_QUESTIONS = [
+    {
+      question: "Which prompt technique ensures deterministic JSON output from LLMs?",
+      options: [
+        "Few-shot prompting with explicit JSON schema examples",
+        "Zero-shot with maximum temperature setting",
+        "Leaving the prompt open-ended without structure",
+        "Using conversational greetings repeatedly"
+      ],
+      correctIndex: 0
+    },
+    {
+      question: "What is the primary role of a webhook in an automated pipeline?",
+      options: [
+        "To store video files in a cloud archive",
+        "To send real-time event notifications and payload data between applications",
+        "To reduce internet bandwidth consumption on mobile devices",
+        "To replace database indexes"
+      ],
+      correctIndex: 1
+    },
+    {
+      question: "Which approach best protects sensitive API keys when deploying automated bots?",
+      options: [
+        "Committing them directly to a public GitHub repository",
+        "Using server-side environment variables and secrets managers",
+        "Embedding them in client-side HTML tags",
+        "Sending them via unencrypted emails"
+      ],
+      correctIndex: 1
+    }
+  ];
+
+  async function handleTestSubmit(e) {
+    if (e) e.preventDefault();
+    setTestSubmitting(true);
+    try {
+      // Calculate score
+      let correctCount = 0;
+      TEST_QUESTIONS.forEach((q, idx) => {
+        if (testAnswers[idx] === q.correctIndex) {
+          correctCount++;
+        }
+      });
+      const calculatedScore = Math.round((correctCount / TEST_QUESTIONS.length) * 100);
+      setTestScore(calculatedScore);
+
+      const res = await submitTest(currentUser.uid, courseData.id, currentLesson.id, testAnswers, calculatedScore);
+      setCurrentTestSubmission(res);
+      await toggleLessonComplete(currentLesson.id);
+      triggerToast(`✓ Test submitted! Your score: ${calculatedScore}%`);
+    } catch (err) {
+      console.error(err);
+      triggerToast("Failed to submit test.");
+    } finally {
+      setTestSubmitting(false);
+    }
+  }
+
+  async function handlePostAnnouncement(e) {
+    e.preventDefault();
+    if (!announcementForm.title.trim() || !announcementForm.body.trim()) return;
+    setPostingAnnouncement(true);
+    try {
+      const newAnn = {
+        title: announcementForm.title.trim(),
+        body: announcementForm.body.trim(),
+        postedBy: userProfile?.fullName || currentUser?.displayName || "Instructor",
+        postedByUid: currentUser?.uid || "tutor",
+        createdAt: serverTimestamp(),
+      };
+      const docRef = await addDoc(collection(db, "courses", courseData.id, "announcements"), newAnn);
+      setAnnouncements((prev) => [
+        { id: docRef.id, ...newAnn, createdAt: { seconds: Date.now() / 1000 } },
+        ...prev,
+      ]);
+      setAnnouncementForm({ title: "", body: "" });
+      setShowAddAnnouncement(false);
+      triggerToast("✓ Announcement posted successfully!");
+    } catch (err) {
+      console.error("Failed to post announcement:", err);
+      triggerToast("Could not post announcement.");
+    } finally {
+      setPostingAnnouncement(false);
+    }
   }
 
   function handleToggleWishlist() {
@@ -125,20 +471,31 @@ export default function CoursePage() {
     });
   }
 
-  function handleAddComment(e) {
+  async function handleAddComment(e) {
     e.preventDefault();
     if (!newComment.trim()) return;
-    setComments(prev => [
-      {
-        id: Date.now(),
-        author: currentUser?.displayName || "Samuel Asuquo",
-        time: "Just now",
-        text: newComment.trim(),
-      },
-      ...prev
-    ]);
+    const commentData = {
+      uid: currentUser?.uid || "anonymous",
+      author: currentUser?.displayName || userProfile?.fullName || "Learner",
+      text: newComment.trim(),
+      createdAt: serverTimestamp(),
+      time: "Just now",
+    };
+    // Optimistic local update
+    const localId = `temp_${Date.now()}`;
+    setComments(prev => [{ id: localId, ...commentData, createdAt: null }, ...prev]);
     setNewComment("");
-    triggerToast("Comment posted!");
+    try {
+      const docRef = await addDoc(collection(db, "courses", courseData.id, "comments"), commentData);
+      // Replace temp entry with real Firestore id
+      setComments(prev => prev.map(c => c.id === localId ? { ...c, id: docRef.id } : c));
+      triggerToast("Comment posted!");
+    } catch (err) {
+      console.error("Failed to post comment:", err);
+      // Remove optimistic entry on failure
+      setComments(prev => prev.filter(c => c.id !== localId));
+      triggerToast("Failed to post comment.");
+    }
   }
 
   function triggerDownload(fileName) {
@@ -257,199 +614,645 @@ export default function CoursePage() {
             ))}
           </aside>
 
-          {/* Right: Main Video Player & Lesson Content */}
+          {/* Right: Main Video Player & Lesson Content (Strictly Gated by Firestore Enrollment) */}
           <main className="classroom-video-main">
-            {/* Video Player Frame */}
-            <div className="video-frame-container" id="classroom-video-player">
-              <img
-                src="https://images.unsplash.com/photo-1531482615713-2afd69097998?w=1200&auto=format&fit=crop&q=80"
-                alt="Lesson Video Preview"
-                style={{ width: "100%", height: "100%", objectFit: "cover", opacity: 0.85 }}
-              />
-
-              <div className="video-mockup-overlay">
-                {/* Top Overlay */}
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <div className="pill-badge" style={{ background: "rgba(0,0,0,0.6)", color: "#FFFFFF", backdropFilter: "blur(4px)" }}>
-                    {courseData.badge} &bull; {currentLesson.title}
-                  </div>
-                  <div style={{ fontSize: "0.85rem", opacity: 0.9 }}>HD 1080p</div>
-                </div>
-
-                {/* Big Center Play Button */}
-                <div style={{ alignSelf: "center", cursor: "pointer" }} onClick={() => setIsPlaying(!isPlaying)}>
-                  <div
-                    style={{
-                      width: 68,
-                      height: 68,
-                      borderRadius: "50%",
-                      background: "rgba(17, 24, 39, 0.85)",
-                      border: "2px solid rgba(255,255,255,0.7)",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      fontSize: "1.6rem",
-                      color: "#FFFFFF",
-                      boxShadow: "0 8px 30px rgba(0,0,0,0.5)",
-                      transition: "transform 0.2s ease"
-                    }}
+            {!isEnrolled ? (
+              <div
+                style={{
+                  background: "#FFFFFF",
+                  border: "1px solid var(--border-light)",
+                  borderRadius: "var(--radius-md)",
+                  padding: "48px 32px",
+                  textAlign: "center",
+                  maxWidth: 640,
+                  margin: "40px auto",
+                  boxShadow: "var(--shadow-sm)",
+                }}
+              >
+                <div style={{ fontSize: "3rem", marginBottom: 16 }}>🔒</div>
+                <h2 style={{ fontSize: "1.6rem", fontWeight: 800, marginBottom: 10, color: "var(--text-primary)" }}>
+                  Enrollment Required
+                </h2>
+                <p style={{ fontSize: "0.95rem", color: "var(--text-secondary)", lineHeight: 1.6, marginBottom: 24 }}>
+                  You are viewing the course curriculum outline. Lesson videos, downloadable exercise materials, interactive assignments, and quizzes require an active enrollment record in Firestore.
+                </p>
+                <div style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap" }}>
+                  <button
+                    className="btn btn-solid-dark btn-lg"
+                    onClick={() => handleEnroll("online")}
+                    style={{ padding: "12px 28px", fontWeight: 700 }}
                   >
-                    {isPlaying ? "❚❚" : "▶"}
-                  </div>
-                </div>
-
-                {/* Bottom Controls Bar */}
-                <div className="video-controls-bar">
-                  <span style={{ cursor: "pointer" }} onClick={() => setIsPlaying(!isPlaying)}>
-                    {isPlaying ? "❚❚" : "▶"}
-                  </span>
-                  <div style={{ flex: 1, height: 5, background: "rgba(255,255,255,0.3)", borderRadius: 99, position: "relative" }}>
-                    <div style={{ width: isPlaying ? "72%" : "52%", height: "100%", background: "var(--primary-learner)", borderRadius: 99, transition: "width 0.3s" }} />
-                  </div>
-                  <span>12:24 / 23:10</span>
-                  <span style={{ cursor: "pointer" }} onClick={() => setIsMuted(m => !m)} title={isMuted ? "Unmute" : "Mute"}>
-                    {isMuted ? "🔇" : "🔊"}
-                  </span>
-                  <span style={{ cursor: "pointer" }} title="Settings">&#x2699;</span>
-                  <span
-                    style={{ cursor: "pointer" }}
-                    title="Toggle Fullscreen"
-                    onClick={() => {
-                      const el = document.getElementById("classroom-video-player");
-                      if (el) {
-                        if (!document.fullscreenElement) el.requestFullscreen().catch(() => {});
-                        else document.exitFullscreen().catch(() => {});
-                      }
-                    }}
+                    Enroll in Online Classes &rarr;
+                  </button>
+                  <button
+                    className="btn btn-outline btn-lg"
+                    onClick={() => handleEnroll("hands-on")}
+                    style={{ padding: "12px 28px", fontWeight: 700 }}
                   >
-                    &#x26F6;
-                  </span>
+                    Enroll in Hands-on Training
+                  </button>
                 </div>
               </div>
-            </div>
+            ) : (
+              <>
+                {/* Video Player Frame */}
+                <div className="video-frame-container" id="classroom-video-player">
+                  <img
+                    src="https://images.unsplash.com/photo-1531482615713-2afd69097998?w=1200&auto=format&fit=crop&q=80"
+                    alt="Lesson Video Preview"
+                    style={{ width: "100%", height: "100%", objectFit: "cover", opacity: 0.85 }}
+                  />
 
-            {/* Lesson Title & Module Info */}
-            <div style={{ marginTop: 24, display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 16 }}>
-              <div>
-                <h1 style={{ fontSize: "1.6rem", fontWeight: 800, marginBottom: 4 }}>
-                  {currentLesson.title}
-                </h1>
-                <div style={{ fontSize: "0.85rem", color: "var(--text-muted)" }}>
-                  Module 02 &bull; {currentLesson.duration} &bull; Self-paced learning
-                </div>
-              </div>
-
-              <div style={{ display: "flex", gap: 10 }}>
-                <button
-                  className="btn btn-outline btn-sm"
-                  onClick={() => {
-                    const currentIndex = allLessons.findIndex(l => l.id === activeLessonId);
-                    if (currentIndex > 0) setActiveLessonId(allLessons[currentIndex - 1].id);
-                  }}
-                >
-                  &larr; Previous
-                </button>
-                <button
-                  className={`btn ${currentLesson.completed ? "btn-outline" : "btn-solid-dark"} btn-sm`}
-                  onClick={() => toggleLessonComplete(currentLesson.id)}
-                >
-                  {currentLesson.completed ? "✓ Completed" : "Mark as complete"}
-                </button>
-                <button
-                  className="btn btn-solid-dark btn-sm"
-                  onClick={() => {
-                    const currentIndex = allLessons.findIndex(l => l.id === activeLessonId);
-                    if (currentIndex < allLessons.length - 1) setActiveLessonId(allLessons[currentIndex + 1].id);
-                  }}
-                >
-                  Next lesson &rarr;
-                </button>
-              </div>
-            </div>
-
-            {/* Content Tabs */}
-            <div className="lesson-tabs-header">
-              {["Overview", "Notes", "Resources", "Discussion"].map(tab => (
-                <button
-                  key={tab}
-                  className={`lesson-tab-btn ${activeTab === tab ? "active" : ""}`}
-                  onClick={() => setActiveTab(tab)}
-                >
-                  {tab}
-                </button>
-              ))}
-            </div>
-
-            {/* Tab Body */}
-            <div style={{ fontSize: "0.925rem", color: "var(--text-secondary)", lineHeight: 1.7, maxWidth: 840 }}>
-              {activeTab === "Overview" && (
-                <div>
-                  <p style={{ marginBottom: 14 }}>
-                    In this lesson, you will learn how to effectively leverage modern AI models to automate everyday business tasks, generate structured output, and orchestrate automated workflows with zero coding required.
-                  </p>
-                  <h4 style={{ fontSize: "1.1rem", fontWeight: 700, color: "var(--text-primary)", margin: "16px 0 8px" }}>
-                    Key Learning Objectives:
-                  </h4>
-                  <ul style={{ paddingLeft: 20, display: "flex", flexDirection: "column", gap: 6 }}>
-                    <li>Understanding zero-shot and few-shot prompt chaining</li>
-                    <li>Formatting AI output directly into JSON, tables, and Markdown</li>
-                    <li>Connecting conversational agents to real-world webhook automation</li>
-                  </ul>
-                </div>
-              )}
-
-              {activeTab === "Notes" && (
-                <div style={{ background: "#FFFFFF", border: "1px solid var(--border-light)", borderRadius: "var(--radius-md)", padding: 20 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-                    <div style={{ fontWeight: 700, color: "var(--text-primary)" }}>Course Notes: {currentLesson.title}</div>
-                    <button className="btn btn-outline btn-sm" onClick={() => triggerDownload("Course_Notes_Module02.pdf")}>
-                      Download PDF &darr;
-                    </button>
-                  </div>
-                  <p>Comprehensive lecture notes summarizing the concepts covered in this module, including cheatsheets, prompt patterns, and best practices.</p>
-                </div>
-              )}
-
-              {activeTab === "Resources" && (
-                <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                  <div style={{ background: "#FFFFFF", border: "1px solid var(--border-light)", borderRadius: "var(--radius-sm)", padding: "14px 18px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <div>
-                      <div style={{ fontWeight: 600, color: "var(--text-primary)" }}>Exercise Files &bull; ZIP</div>
-                      <div style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>Templates, dataset spreadsheets, and prompt guides (4.2 MB)</div>
-                    </div>
-                    <button className="btn btn-outline btn-sm" onClick={() => triggerDownload("Exercise_Files_Module02.zip")}>
-                      Download &darr;
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {activeTab === "Discussion" && (
-                <div>
-                  <form onSubmit={handleAddComment} style={{ display: "flex", gap: 12, marginBottom: 20 }}>
-                    <input
-                      type="text"
-                      placeholder="Ask a question or share a thought on this lesson..."
-                      value={newComment}
-                      onChange={e => setNewComment(e.target.value)}
-                      style={{ flex: 1, padding: "10px 14px", borderRadius: "var(--radius-sm)", border: "1px solid var(--border-light)", outline: "none" }}
-                    />
-                    <button type="submit" className="btn btn-solid-dark">Post</button>
-                  </form>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                    {comments.map(c => (
-                      <div key={c.id} style={{ padding: "12px 16px", background: "#FFFFFF", border: "1px solid var(--border-light)", borderRadius: "var(--radius-sm)" }}>
-                        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-                          <span style={{ fontWeight: 700, fontSize: "0.85rem", color: "var(--text-primary)" }}>{c.author}</span>
-                          <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>{c.time}</span>
-                        </div>
-                        <p style={{ fontSize: "0.875rem", color: "var(--text-secondary)" }}>{c.text}</p>
+                  <div className="video-mockup-overlay">
+                    {/* Top Overlay */}
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <div className="pill-badge" style={{ background: "rgba(0,0,0,0.6)", color: "#FFFFFF", backdropFilter: "blur(4px)" }}>
+                        {courseData.badge} &bull; {currentLesson.title}
                       </div>
-                    ))}
+                      <div style={{ fontSize: "0.85rem", opacity: 0.9 }}>HD 1080p</div>
+                    </div>
+
+                    {/* Big Center Play Button */}
+                    <div style={{ alignSelf: "center", cursor: "pointer" }} onClick={() => setIsPlaying(!isPlaying)}>
+                      <div
+                        style={{
+                          width: 68,
+                          height: 68,
+                          borderRadius: "50%",
+                          background: "rgba(17, 24, 39, 0.85)",
+                          border: "2px solid rgba(255,255,255,0.7)",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          fontSize: "1.6rem",
+                          color: "#FFFFFF",
+                          boxShadow: "0 8px 30px rgba(0,0,0,0.5)",
+                          transition: "transform 0.2s ease"
+                        }}
+                      >
+                        {isPlaying ? "❚❚" : "▶"}
+                      </div>
+                    </div>
+
+                    {/* Bottom Controls Bar */}
+                    <div className="video-controls-bar">
+                      <span style={{ cursor: "pointer" }} onClick={() => setIsPlaying(!isPlaying)}>
+                        {isPlaying ? "❚❚" : "▶"}
+                      </span>
+                      <div style={{ flex: 1, height: 5, background: "rgba(255,255,255,0.3)", borderRadius: 99, position: "relative" }}>
+                        <div style={{ width: isPlaying ? "72%" : "52%", height: "100%", background: "var(--primary-learner)", borderRadius: 99, transition: "width 0.3s" }} />
+                      </div>
+                      <span>12:24 / 23:10</span>
+                      <span style={{ cursor: "pointer" }} onClick={() => setIsMuted(m => !m)} title={isMuted ? "Unmute" : "Mute"}>
+                        {isMuted ? "🔇" : "🔊"}
+                      </span>
+                      <span style={{ cursor: "pointer" }} title="Settings">&#x2699;</span>
+                      <span
+                        style={{ cursor: "pointer" }}
+                        title="Toggle Fullscreen"
+                        onClick={() => {
+                          const el = document.getElementById("classroom-video-player");
+                          if (el) {
+                            if (!document.fullscreenElement) el.requestFullscreen().catch(() => {});
+                            else document.exitFullscreen().catch(() => {});
+                          }
+                        }}
+                      >
+                        &#x26F6;
+                      </span>
+                    </div>
                   </div>
                 </div>
-              )}
-            </div>
+
+                {/* Lesson Title & Module Info */}
+                <div style={{ marginTop: 24, display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 16 }}>
+                  <div>
+                    <h1 style={{ fontSize: "1.6rem", fontWeight: 800, marginBottom: 4 }}>
+                      {currentLesson.title}
+                    </h1>
+                    <div style={{ fontSize: "0.85rem", color: "var(--text-muted)" }}>
+                      Module 02 &bull; {currentLesson.duration} &bull; Self-paced learning
+                    </div>
+                  </div>
+
+                  <div style={{ display: "flex", gap: 10 }}>
+                    <button
+                      className="btn btn-outline btn-sm"
+                      onClick={() => {
+                        const currentIndex = allLessons.findIndex(l => l.id === activeLessonId);
+                        if (currentIndex > 0) setActiveLessonId(allLessons[currentIndex - 1].id);
+                      }}
+                    >
+                      &larr; Previous
+                    </button>
+                    <button
+                      className={`btn ${currentLesson.completed ? "btn-outline" : "btn-solid-dark"} btn-sm`}
+                      onClick={() => toggleLessonComplete(currentLesson.id)}
+                    >
+                      {currentLesson.completed ? "✓ Completed" : "Mark as complete"}
+                    </button>
+                    <button
+                      className="btn btn-solid-dark btn-sm"
+                      onClick={() => {
+                        const currentIndex = allLessons.findIndex(l => l.id === activeLessonId);
+                        if (currentIndex < allLessons.length - 1) setActiveLessonId(allLessons[currentIndex + 1].id);
+                      }}
+                    >
+                      Next lesson &rarr;
+                    </button>
+                  </div>
+                </div>
+
+                {/* Content Tabs */}
+                <div className="lesson-tabs-header">
+                  {["Overview", "Notes", "Resources", "Announcements", "Discussion"].map(tab => (
+                    <button
+                      key={tab}
+                      className={`lesson-tab-btn ${activeTab === tab ? "active" : ""}`}
+                      onClick={() => setActiveTab(tab)}
+                    >
+                      {tab}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Tab Body */}
+                <div style={{ fontSize: "0.925rem", color: "var(--text-secondary)", lineHeight: 1.7, maxWidth: 840 }}>
+                  {activeTab === "Overview" && (
+                    <div>
+                      <p style={{ marginBottom: 14 }}>
+                        In this lesson, you will learn how to effectively leverage modern AI models to automate everyday business tasks, generate structured output, and orchestrate automated workflows with zero coding required.
+                      </p>
+                      <h4 style={{ fontSize: "1.1rem", fontWeight: 700, color: "var(--text-primary)", margin: "16px 0 8px" }}>
+                        Key Learning Objectives:
+                      </h4>
+                      <ul style={{ paddingLeft: 20, display: "flex", flexDirection: "column", gap: 6, marginBottom: 20 }}>
+                        <li>Understanding zero-shot and few-shot prompt chaining</li>
+                        <li>Formatting AI output directly into JSON, tables, and Markdown</li>
+                        <li>Connecting conversational agents to real-world webhook automation</li>
+                      </ul>
+
+                      {/* Interactive Firestore Assignment Submission */}
+                      {currentLesson.type === "assignment" && (
+                        <div style={{ background: "#F8FAFC", border: "1px solid var(--border-light)", borderRadius: "var(--radius-md)", padding: 24, marginTop: 24 }}>
+                          <h4 style={{ fontSize: "1.05rem", fontWeight: 700, marginBottom: 8 }}>
+                            📝 Practical Assignment: Prompt Chain & Zapier Pipeline
+                          </h4>
+                          <p style={{ fontSize: "0.875rem", color: "var(--text-secondary)", marginBottom: 16 }}>
+                            Submit your Zapier webhook link or paste your multi-step JSON prompt template below for instructor review.
+                          </p>
+
+                          {currentSubmission ? (
+                            <div style={{ background: "#FFFFFF", border: "1px solid var(--border-light)", borderRadius: "var(--radius-sm)", padding: 16 }}>
+                              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                                <span className="pill-badge pill-success">Status: Submitted</span>
+                                <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>Recorded in Firestore</span>
+                              </div>
+                              <div style={{ fontSize: "0.85rem", color: "var(--text-secondary)", background: "#F1F5F9", padding: 10, borderRadius: 6, fontFamily: "monospace" }}>
+                                {currentSubmission.content}
+                              </div>
+                              {currentSubmission.grade && (
+                                <div style={{ marginTop: 12, padding: "10px 14px", background: "#ECFDF5", border: "1px solid #A7F3D0", borderRadius: 6, color: "#065F46" }}>
+                                  <strong>Instructor Grade:</strong> {currentSubmission.grade}
+                                  {currentSubmission.feedback && <p style={{ marginTop: 4, fontSize: "0.85rem" }}>{currentSubmission.feedback}</p>}
+                                </div>
+                              )}
+                            </div>
+                          ) : (
+                            <form onSubmit={handleAssignmentSubmit}>
+                              <textarea
+                                rows={4}
+                                required
+                                value={assignmentContent}
+                                onChange={(e) => setAssignmentContent(e.target.value)}
+                                placeholder="Paste your assignment deliverables or solution notes here..."
+                                style={{ width: "100%", padding: 12, borderRadius: "var(--radius-sm)", border: "1px solid var(--border-light)", fontSize: "0.875rem", fontFamily: "inherit", outline: "none", marginBottom: 12 }}
+                              />
+                              <button type="submit" disabled={assignmentSubmitting} className="btn btn-solid-dark btn-sm">
+                                {assignmentSubmitting ? "Submitting to Firestore..." : "Submit Assignment"}
+                              </button>
+                            </form>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Interactive Firestore Test Submission (Stage 4 One-Question-at-a-Time Engine) */}
+                      {currentLesson.type === "test" && (
+                        <div style={{ background: "#F8FAFC", border: "1px solid var(--border-light)", borderRadius: "var(--radius-md)", padding: 24, marginTop: 24 }}>
+                          <h4 style={{ fontSize: "1.05rem", fontWeight: 700, marginBottom: 8 }}>
+                            🎓 Knowledge Assessment Quiz
+                          </h4>
+                          <p style={{ fontSize: "0.875rem", color: "var(--text-secondary)", marginBottom: 16 }}>
+                            Complete the quiz below. Your score will be calculated and saved to your learner profile immediately.
+                          </p>
+
+                          {currentTestSubmission ? (
+                            <div style={{ background: "#FFFFFF", border: "1px solid var(--border-light)", borderRadius: "var(--radius-sm)", padding: 20 }}>
+                              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                                <span className="pill-badge pill-success">Status: Completed &amp; Recorded</span>
+                                <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>Firestore Record Saved</span>
+                              </div>
+                              <div style={{ textAlign: "center", padding: "16px 0", background: "var(--bg-main)", borderRadius: "8px", marginBottom: 12 }}>
+                                <div style={{ fontSize: "0.8rem", color: "var(--text-muted)", textTransform: "uppercase", fontWeight: 700 }}>Your Assessment Score</div>
+                                <div style={{ fontSize: "2.5rem", fontWeight: 800, color: "var(--primary-learner)", margin: "4px 0" }}>
+                                  {currentTestSubmission.score !== undefined && currentTestSubmission.score !== null ? `${currentTestSubmission.score}%` : `${testScore || 100}%`}
+                                </div>
+                                <div style={{ fontSize: "0.85rem", color: "#166534", fontWeight: 600 }}>
+                                  ✓ Knowledge check recorded in your enrollment progress.
+                                </div>
+                              </div>
+                              {currentTestSubmission.grade && (
+                                <div style={{ marginTop: 12, padding: "10px 14px", background: "#ECFDF5", border: "1px solid #A7F3D0", borderRadius: 6, color: "#065F46" }}>
+                                  <strong>Instructor Feedback:</strong> {currentTestSubmission.grade}
+                                  {currentTestSubmission.feedback && <p style={{ marginTop: 4, fontSize: "0.85rem" }}>{currentTestSubmission.feedback}</p>}
+                                </div>
+                              )}
+                            </div>
+                          ) : (
+                            <div style={{ background: "#FFFFFF", border: "1px solid var(--border-light)", borderRadius: "var(--radius-sm)", padding: 20 }}>
+                              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+                                <span style={{ fontSize: "0.85rem", fontWeight: 700, color: "var(--primary-learner)" }}>
+                                  Question {currentQuestionIndex + 1} of {TEST_QUESTIONS.length}
+                                </span>
+                                <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
+                                  Passing score: 70%
+                                </span>
+                              </div>
+
+                              <div style={{ fontSize: "1rem", fontWeight: 700, color: "var(--text-primary)", marginBottom: 16 }}>
+                                {TEST_QUESTIONS[currentQuestionIndex].question}
+                              </div>
+
+                              <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 20 }}>
+                                {TEST_QUESTIONS[currentQuestionIndex].options.map((opt, oIdx) => {
+                                  const isSelected = testAnswers[currentQuestionIndex] === oIdx;
+                                  return (
+                                    <div
+                                      key={oIdx}
+                                      onClick={() => setTestAnswers(prev => ({ ...prev, [currentQuestionIndex]: oIdx }))}
+                                      style={{
+                                        display: "flex",
+                                        alignItems: "center",
+                                        gap: 12,
+                                        padding: "12px 16px",
+                                        borderRadius: "8px",
+                                        border: `1px solid ${isSelected ? "var(--primary-learner)" : "var(--border-light)"}`,
+                                        background: isSelected ? "var(--primary-learner-light)" : "#FFFFFF",
+                                        cursor: "pointer",
+                                        transition: "all 0.15s ease"
+                                      }}
+                                    >
+                                      <div
+                                        style={{
+                                          width: 18,
+                                          height: 18,
+                                          borderRadius: "50%",
+                                          border: `2px solid ${isSelected ? "var(--primary-learner)" : "#CBD5E1"}`,
+                                          display: "flex",
+                                          alignItems: "center",
+                                          justifyContent: "center"
+                                        }}
+                                      >
+                                        {isSelected && <div style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--primary-learner)" }} />}
+                                      </div>
+                                      <span style={{ fontSize: "0.875rem", color: isSelected ? "var(--primary-learner)" : "var(--text-secondary)", fontWeight: isSelected ? 600 : 400 }}>
+                                        {opt}
+                                      </span>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+
+                              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                                <button
+                                  type="button"
+                                  disabled={currentQuestionIndex === 0}
+                                  onClick={() => setCurrentQuestionIndex(i => i - 1)}
+                                  className="btn btn-outline btn-sm"
+                                  style={{ opacity: currentQuestionIndex === 0 ? 0.5 : 1 }}
+                                >
+                                  &larr; Previous
+                                </button>
+
+                                {currentQuestionIndex < TEST_QUESTIONS.length - 1 ? (
+                                  <button
+                                    type="button"
+                                    disabled={testAnswers[currentQuestionIndex] === undefined}
+                                    onClick={() => setCurrentQuestionIndex(i => i + 1)}
+                                    className="btn btn-solid-dark btn-sm"
+                                  >
+                                    Next Question &rarr;
+                                  </button>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    disabled={testAnswers[currentQuestionIndex] === undefined || testSubmitting}
+                                    onClick={handleTestSubmit}
+                                    className="btn btn-solid-dark btn-sm"
+                                    style={{ background: "var(--primary-learner)" }}
+                                  >
+                                    {testSubmitting ? "Scoring Test..." : "Submit Test & See Score →"}
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {activeTab === "Notes" && (
+                    <div style={{ background: "#FFFFFF", border: "1px solid var(--border-light)", borderRadius: "var(--radius-md)", padding: 20 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                        <div style={{ fontWeight: 700, color: "var(--text-primary)" }}>Course Notes: {currentLesson.title}</div>
+                        <button className="btn btn-outline btn-sm" onClick={() => triggerDownload("Course_Notes_Module02.pdf")}>
+                          Download PDF &darr;
+                        </button>
+                      </div>
+                      <p>Comprehensive lecture notes summarizing the concepts covered in this module, including cheatsheets, prompt patterns, and best practices.</p>
+                    </div>
+                  )}
+
+                  {activeTab === "Resources" && (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                      {/* Admin & Tutor Upload Bar */}
+                      {(userProfile?.role === "admin" || userProfile?.role === "tutor" || userProfile?.role === "instructor") && (
+                        <div style={{ background: "#F8FAFC", border: "1px solid var(--border-light)", borderRadius: "var(--radius-sm)", padding: 16 }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                            <div>
+                              <div style={{ fontWeight: 700, fontSize: "0.95rem", color: "var(--text-primary)" }}>
+                                Instructor &amp; Admin Resource Manager
+                              </div>
+                              <div style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>
+                                Upload exercise files, slides, and cheat sheets for this course.
+                              </div>
+                            </div>
+                            <button
+                              className="btn btn-solid-dark btn-sm"
+                              onClick={() => setShowResourceUpload((prev) => !prev)}
+                            >
+                              {showResourceUpload ? "✕ Cancel" : "+ Upload Course Resource"}
+                            </button>
+                          </div>
+
+                          {showResourceUpload && (
+                            <form onSubmit={handleUploadCourseResource} style={{ marginTop: 14, paddingTop: 14, borderTop: "1px solid var(--border-subtle)", display: "flex", flexDirection: "column", gap: 10 }}>
+                              <div>
+                                <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>
+                                  RESOURCE TITLE *
+                                </label>
+                                <input
+                                  type="text"
+                                  required
+                                  placeholder="e.g. Module 2 Hands-on Exercise Files"
+                                  value={resourceUploadData.title}
+                                  onChange={(e) => setResourceUploadData({ ...resourceUploadData, title: e.target.value })}
+                                  className="form-field-input"
+                                  style={{ padding: "8px 12px", fontSize: "0.875rem" }}
+                                />
+                              </div>
+
+                              <div>
+                                <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>
+                                  DESCRIPTION
+                                </label>
+                                <input
+                                  type="text"
+                                  placeholder="Brief description of file contents"
+                                  value={resourceUploadData.description}
+                                  onChange={(e) => setResourceUploadData({ ...resourceUploadData, description: e.target.value })}
+                                  className="form-field-input"
+                                  style={{ padding: "8px 12px", fontSize: "0.875rem" }}
+                                />
+                              </div>
+
+                              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                                <div>
+                                  <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>
+                                    ATTACH FILE (PDF, ZIP, DOC, IMG)
+                                  </label>
+                                  <input
+                                    type="file"
+                                    onChange={(e) => setResourceUploadData({ ...resourceUploadData, file: e.target.files[0] || null })}
+                                    style={{ fontSize: "0.8rem", width: "100%" }}
+                                  />
+                                </div>
+                                <div>
+                                  <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>
+                                    OR EXTERNAL URL (DRIVE, FIGMA, GITHUB)
+                                  </label>
+                                  <input
+                                    type="url"
+                                    placeholder="https://..."
+                                    value={resourceUploadData.externalUrl}
+                                    onChange={(e) => setResourceUploadData({ ...resourceUploadData, externalUrl: e.target.value })}
+                                    className="form-field-input"
+                                    style={{ padding: "8px 12px", fontSize: "0.875rem" }}
+                                  />
+                                </div>
+                              </div>
+
+                              <button
+                                type="submit"
+                                disabled={isUploadingResource}
+                                className="btn btn-solid-dark btn-sm"
+                                style={{ alignSelf: "flex-start", marginTop: 6 }}
+                              >
+                                {isUploadingResource ? "Uploading..." : "Publish to Course →"}
+                              </button>
+                            </form>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Course Resources List */}
+                      {courseResources.length === 0 ? (
+                        <div style={{ background: "#FFFFFF", border: "1px solid var(--border-light)", borderRadius: "var(--radius-sm)", padding: 24, textAlign: "center", color: "var(--text-muted)" }}>
+                          No resources uploaded for this course yet.
+                        </div>
+                      ) : (
+                        courseResources.map((res) => (
+                          <div
+                            key={res.id}
+                            style={{
+                              background: "#FFFFFF",
+                              border: "1px solid var(--border-light)",
+                              borderRadius: "var(--radius-sm)",
+                              padding: "16px 20px",
+                              display: "flex",
+                              justifyContent: "space-between",
+                              alignItems: "center",
+                              gap: 12,
+                            }}
+                          >
+                            <div style={{ maxWidth: "75%" }}>
+                              <div style={{ fontWeight: 700, color: "var(--text-primary)", fontSize: "0.95rem" }}>
+                                {res.title}
+                              </div>
+                              <div style={{ fontSize: "0.825rem", color: "var(--text-muted)", marginTop: 2 }}>
+                                {res.desc || res.description}
+                              </div>
+                              <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6 }}>
+                                <span className="pill-badge pill-success">{res.type}</span>
+                                {res.fileSize && (
+                                  <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>{res.fileSize}</span>
+                                )}
+                                {res.uploaderName && (
+                                  <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
+                                    &bull; Uploaded by {res.uploaderName}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+
+                            <a
+                              href={res.fileUrl || "#"}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="btn btn-outline btn-sm"
+                              style={{ textDecoration: "none", flexShrink: 0 }}
+                            >
+                              Download &darr;
+                            </a>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  )}
+
+                  {activeTab === "Announcements" && (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                      {/* Tutor / Admin Post Announcement Bar */}
+                      {(userProfile?.role === "admin" || userProfile?.role === "tutor" || userProfile?.role === "instructor") && (
+                        <div style={{ background: "#F8FAFC", border: "1px solid var(--border-light)", borderRadius: "var(--radius-sm)", padding: 16 }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                            <div>
+                              <div style={{ fontWeight: 700, fontSize: "0.95rem", color: "var(--text-primary)" }}>
+                                Course Announcements Manager
+                              </div>
+                              <div style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>
+                                Broadcast updates, reminders, or schedule changes to all enrolled students.
+                              </div>
+                            </div>
+                            <button
+                              className="btn btn-solid-dark btn-sm"
+                              onClick={() => setShowAddAnnouncement((prev) => !prev)}
+                            >
+                              {showAddAnnouncement ? "✕ Cancel" : "+ New Announcement"}
+                            </button>
+                          </div>
+
+                          {showAddAnnouncement && (
+                            <form onSubmit={handlePostAnnouncement} style={{ marginTop: 14, paddingTop: 14, borderTop: "1px solid var(--border-subtle)", display: "flex", flexDirection: "column", gap: 10 }}>
+                              <div>
+                                <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>
+                                  ANNOUNCEMENT TITLE *
+                                </label>
+                                <input
+                                  type="text"
+                                  required
+                                  placeholder="e.g. Midterm Project Submissions Due Friday"
+                                  value={announcementForm.title}
+                                  onChange={(e) => setAnnouncementForm({ ...announcementForm, title: e.target.value })}
+                                  className="form-field-input"
+                                  style={{ padding: "8px 12px", fontSize: "0.875rem" }}
+                                />
+                              </div>
+                              <div>
+                                <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>
+                                  DETAILS / BODY *
+                                </label>
+                                <textarea
+                                  rows={3}
+                                  required
+                                  placeholder="Write announcement details..."
+                                  value={announcementForm.body}
+                                  onChange={(e) => setAnnouncementForm({ ...announcementForm, body: e.target.value })}
+                                  className="form-field-input"
+                                  style={{ padding: "8px 12px", fontSize: "0.875rem" }}
+                                />
+                              </div>
+                              <button
+                                type="submit"
+                                disabled={postingAnnouncement}
+                                className="btn btn-solid-dark btn-sm"
+                                style={{ alignSelf: "flex-start" }}
+                              >
+                                {postingAnnouncement ? "Posting..." : "Broadcast Announcement →"}
+                              </button>
+                            </form>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Announcements Feed */}
+                      {announcements.length === 0 ? (
+                        <div style={{ background: "#FFFFFF", border: "1px solid var(--border-light)", borderRadius: "var(--radius-sm)", padding: 24, textAlign: "center", color: "var(--text-muted)" }}>
+                          No announcements posted for this course yet.
+                        </div>
+                      ) : (
+                        announcements.map((ann) => (
+                          <div
+                            key={ann.id}
+                            style={{
+                              background: "#FFFFFF",
+                              border: "1px solid var(--border-light)",
+                              borderRadius: "var(--radius-sm)",
+                              padding: "18px 20px",
+                              display: "flex",
+                              flexDirection: "column",
+                              gap: 8,
+                            }}
+                          >
+                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: 8 }}>
+                              <div style={{ fontWeight: 700, color: "var(--text-primary)", fontSize: "1.05rem" }}>
+                                {ann.title}
+                              </div>
+                              <div style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
+                                {ann.createdAt?.seconds ? new Date(ann.createdAt.seconds * 1000).toLocaleDateString() : "Recent"}
+                              </div>
+                            </div>
+                            <p style={{ fontSize: "0.9rem", color: "var(--text-secondary)", lineHeight: 1.6, margin: 0 }}>
+                              {ann.body}
+                            </p>
+                            <div style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginTop: 4 }}>
+                              Posted by <strong style={{ color: "var(--text-primary)" }}>{ann.postedBy || "Course Staff"}</strong>
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  )}
+
+                  {activeTab === "Discussion" && (
+                    <div>
+                      <form onSubmit={handleAddComment} style={{ display: "flex", gap: 12, marginBottom: 20 }}>
+                        <input
+                          type="text"
+                          placeholder="Ask a question or share a thought on this lesson..."
+                          value={newComment}
+                          onChange={e => setNewComment(e.target.value)}
+                          style={{ flex: 1, padding: "10px 14px", borderRadius: "var(--radius-sm)", border: "1px solid var(--border-light)", outline: "none" }}
+                        />
+                        <button type="submit" className="btn btn-solid-dark">Post</button>
+                      </form>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                        {comments.map(c => (
+                          <div key={c.id} style={{ padding: "12px 16px", background: "#FFFFFF", border: "1px solid var(--border-light)", borderRadius: "var(--radius-sm)" }}>
+                            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                              <span style={{ fontWeight: 700, fontSize: "0.85rem", color: "var(--text-primary)" }}>{c.author}</span>
+                              <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>{c.time}</span>
+                            </div>
+                            <p style={{ fontSize: "0.875rem", color: "var(--text-secondary)" }}>{c.text}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
           </main>
         </div>
 

@@ -19,11 +19,13 @@ function ScrollToTop() {
   return null;
 }
 
-// Lazy-loaded routes to eliminate heavy initial bundle overhead
+// Lazy-loaded routes to eliminate initial bundle overhead
 const Auth = lazy(() => import("./pages/Auth"));
 const Dashboard = lazy(() => import("./pages/Dashboard"));
 const AdminPanel = lazy(() => import("./pages/AdminPanel"));
 const CoursePage = lazy(() => import("./pages/CoursePage"));
+const TeachingPortal = lazy(() => import("./pages/TeachingPortal"));
+const TeachMarketing = lazy(() => import("./pages/TeachMarketing"));
 const BecomeInstructor = lazy(() => import("./pages/BecomeInstructor"));
 const About = lazy(() => import("./pages/About"));
 
@@ -39,6 +41,15 @@ function PageLoader() {
   );
 }
 
+function WithNavbar({ children }) {
+  return (
+    <>
+      <Navbar />
+      {children}
+    </>
+  );
+}
+
 export default function App() {
   return (
     <AuthProvider>
@@ -46,54 +57,42 @@ export default function App() {
         <ScrollToTop />
         <Suspense fallback={<PageLoader />}>
           <Routes>
-            {/* Auth page — no navbar */}
+            {/* Auth page — standalone, no header */}
             <Route path="/auth" element={<Auth />} />
 
-            {/* All other pages with navbar */}
+            {/* Public Marketing & Informational Routes */}
+            <Route path="/" element={<WithNavbar><Home /></WithNavbar>} />
+            <Route path="/about" element={<WithNavbar><About /></WithNavbar>} />
+            <Route path="/teach" element={<WithNavbar><TeachMarketing /></WithNavbar>} />
+
+            {/* Teaching Portal (Handles both Application form for students and Teaching Portal for tutors/admins) */}
             <Route
-              path="*"
-              element={
-                <>
-                  <Navbar />
-                  <Routes>
-                    <Route path="/" element={<Home />} />
-                    <Route path="/about" element={<About />} />
-                    <Route
-                      path="/become-instructor"
-                      element={
-                        <ProtectedRoute>
-                          <BecomeInstructor />
-                        </ProtectedRoute>
-                      }
-                    />
-                    <Route
-                      path="/dashboard"
-                      element={
-                        <ProtectedRoute>
-                          <Dashboard />
-                        </ProtectedRoute>
-                      }
-                    />
-                    <Route
-                      path="/course/:id"
-                      element={
-                        <ProtectedRoute>
-                          <CoursePage />
-                        </ProtectedRoute>
-                      }
-                    />
-                    <Route
-                      path="/admin"
-                      element={
-                        <ProtectedRoute adminOnly>
-                          <AdminPanel />
-                        </ProtectedRoute>
-                      }
-                    />
-                  </Routes>
-                </>
-              }
+              path="/teach-portal"
+              element={<ProtectedRoute><TeachingPortal /></ProtectedRoute>}
             />
+            <Route
+              path="/become-instructor"
+              element={<ProtectedRoute><BecomeInstructor /></ProtectedRoute>}
+            />
+
+            {/* Learner Portal Routes */}
+            <Route
+              path="/dashboard"
+              element={<ProtectedRoute><WithNavbar><Dashboard /></WithNavbar></ProtectedRoute>}
+            />
+            <Route
+              path="/course/:id"
+              element={<ProtectedRoute><WithNavbar><CoursePage /></WithNavbar></ProtectedRoute>}
+            />
+
+            {/* Administrator Console */}
+            <Route
+              path="/admin"
+              element={<ProtectedRoute adminOnly><WithNavbar><AdminPanel /></WithNavbar></ProtectedRoute>}
+            />
+
+            {/* Fallback route */}
+            <Route path="*" element={<WithNavbar><Home /></WithNavbar>} />
           </Routes>
         </Suspense>
       </BrowserRouter>

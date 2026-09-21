@@ -1,7 +1,9 @@
 import { useState, useEffect, useRef } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
-import { COURSES_CATALOG } from "../pages/Home";
+import { COURSES_CATALOG } from "../data/courses";
+import { getResources, uploadResource, DEFAULT_RESOURCES } from "../contexts/resourcesService";
+import { subscribeToNotifications, markNotificationAsRead, markAllNotificationsAsRead } from "../contexts/notificationsService";
 
 export default function Navbar() {
   const { currentUser, userProfile, logout, updateUserRole } = useAuth();
@@ -13,6 +15,19 @@ export default function Navbar() {
   const [showNotifications, setShowNotifications] = useState(false);
   const [showResourcesModal, setShowResourcesModal] = useState(false);
   const [showMobileMenu, setShowMobileMenu] = useState(false);
+
+  // Platform resources state
+  const [platformResources, setPlatformResources] = useState(DEFAULT_RESOURCES);
+  const [showResourceUploadForm, setShowResourceUploadForm] = useState(false);
+  const [resourceUploadData, setResourceUploadData] = useState({
+    title: "",
+    description: "",
+    category: "Tech & Digital Skills",
+    externalUrl: "",
+    file: null,
+  });
+  const [isUploadingResource, setIsUploadingResource] = useState(false);
+  const [resourceUploadSuccess, setResourceUploadSuccess] = useState("");
 
   // Active search modal state
   const [showSearchModal, setShowSearchModal] = useState(false);
@@ -54,6 +69,87 @@ export default function Navbar() {
   const [selectedNotification, setSelectedNotification] = useState(null);
 
   const navRef = useRef(null);
+
+  // Subscribe to real-time user notifications
+  useEffect(() => {
+    if (!currentUser?.uid) return;
+    const unsubscribe = subscribeToNotifications(currentUser.uid, (items) => {
+      if (items && items.length > 0) {
+        setNotifications(
+          items.map((it) => ({
+            id: it.id,
+            title: it.title,
+            text: it.body,
+            fullMessage: it.body,
+            time: it.createdAt?.seconds
+              ? new Date(it.createdAt.seconds * 1000).toLocaleDateString()
+              : "Recent",
+            unread: !it.read,
+            actionLink: it.courseId ? `/course/${it.courseId}` : "/dashboard",
+          }))
+        );
+      }
+    });
+    return unsubscribe;
+  }, [currentUser?.uid]);
+
+  // Load platform resources when Resources modal opens
+  useEffect(() => {
+    if (showResourcesModal) {
+      getResources("platform")
+        .then((res) => {
+          if (res && res.length > 0) setPlatformResources(res);
+        })
+        .catch((err) => console.warn("Error fetching platform resources:", err));
+    }
+  }, [showResourcesModal]);
+
+  async function handleUploadResource(e) {
+    e.preventDefault();
+    if (!resourceUploadData.title.trim() || (!resourceUploadData.file && !resourceUploadData.externalUrl.trim())) {
+      alert("Please provide a resource title and either a file to upload or an external URL.");
+      return;
+    }
+
+    setIsUploadingResource(true);
+    setResourceUploadSuccess("");
+
+    try {
+      const newRes = await uploadResource({
+        file: resourceUploadData.file,
+        title: resourceUploadData.title,
+        description: resourceUploadData.description,
+        category: resourceUploadData.category,
+        courseId: "platform",
+        externalUrl: resourceUploadData.externalUrl,
+        user: currentUser
+          ? {
+              uid: currentUser.uid,
+              displayName: currentUser.displayName || userProfile?.fullName,
+              email: currentUser.email,
+              role: userProfile?.role,
+            }
+          : null,
+      });
+
+      setPlatformResources((prev) => [newRes, ...prev]);
+      setResourceUploadSuccess("✓ Resource published successfully!");
+      setResourceUploadData({
+        title: "",
+        description: "",
+        category: "Tech & Digital Skills",
+        externalUrl: "",
+        file: null,
+      });
+      setShowResourceUploadForm(false);
+      setTimeout(() => setResourceUploadSuccess(""), 4000);
+    } catch (err) {
+      console.error("Resource upload error:", err);
+      alert(err.message || "Failed to upload resource. Please check file permissions.");
+    } finally {
+      setIsUploadingResource(false);
+    }
+  }
 
   // Close menus on click outside
   useEffect(() => {
@@ -97,8 +193,8 @@ export default function Navbar() {
 
   const isLanding = location.pathname === "/";
   const isDashboard = location.pathname === "/dashboard";
-  // On the landing page, always present public visitor view (no bell, no avatar)
-  const showAuthUser = !isLanding && !!currentUser;
+  // Always show authenticated user profile & notifications when logged in
+  const showAuthUser = !!currentUser;
 
   // Keyboard shortcut for active search modal (Ctrl+K / Cmd+K)
   useEffect(() => {
@@ -129,12 +225,20 @@ export default function Navbar() {
     return matchesCategory && matchesQuery;
   });
 
-  const initials = (currentUser?.displayName || userProfile?.fullName || currentUser?.email?.slice(0, 2) || "PK")
-    .split(" ")
+  const nameToUse =
+    userProfile?.fullName ||
+    currentUser?.displayName ||
+    (userProfile?.firstName && userProfile?.surname ? `${userProfile.firstName} ${userProfile.surname}` : "") ||
+    currentUser?.email?.split("@")[0] ||
+    "PK";
+
+  const initials = nameToUse
+    .trim()
+    .split(/\s+/)
     .map(n => n[0])
     .join("")
     .toUpperCase()
-    .slice(0, 2);
+    .slice(0, 2) || "PK";
 
   const unreadCount = notifications.filter(n => n.unread).length;
 
@@ -146,6 +250,13 @@ export default function Navbar() {
 
   function markAllNotificationsRead() {
     setNotifications(prev => prev.map(n => ({ ...n, unread: false })));
+    // Persist to Firestore so badge doesn't reappear on reload
+    if (currentUser?.uid) {
+      markAllNotificationsAsRead(
+        currentUser.uid,
+        notifications.map(n => ({ id: n.id, read: !n.unread }))
+      ).catch(err => console.warn("Could not mark all notifications read in Firestore:", err));
+    }
   }
 
   const isActive = (path) => location.pathname === path;
@@ -345,81 +456,140 @@ export default function Navbar() {
                     position: "absolute",
                     top: "calc(100% + 12px)",
                     right: 0,
-                    width: 230,
+                    width: 260,
                     background: "#FFFFFF",
                     border: "1px solid var(--border-light)",
                     borderRadius: "var(--radius-md)",
                     boxShadow: "var(--shadow-lg)",
-                    padding: "8px 0",
+                    padding: "12px 0",
                     zIndex: 250,
                   }}
                 >
-                  <div style={{ padding: "10px 16px", borderBottom: "1px solid var(--border-subtle)" }}>
-                    <div style={{ fontWeight: 700, fontSize: "0.9rem", color: "var(--text-primary)" }}>
-                      {activeUser?.displayName || userProfile?.fullName || "Learner"}
+                  <div style={{ padding: "8px 16px 12px", borderBottom: "1px solid var(--border-subtle)" }}>
+                    <div style={{ fontWeight: 800, fontSize: "0.95rem", color: "var(--text-primary)" }}>
+                      {currentUser?.displayName || userProfile?.fullName || "Learner"}
                     </div>
-                    <div style={{ fontSize: "0.775rem", color: "var(--text-muted)" }}>
-                      {activeUser?.email || ""}
+                    <div style={{ fontSize: "0.775rem", color: "var(--text-muted)", marginTop: 2 }}>
+                      {currentUser?.email || ""}
                     </div>
-                    {userProfile?.regNumber && (
-                      <div className="pill-badge pill-success" style={{ marginTop: 6 }}>
-                        ID: {userProfile.regNumber}
-                      </div>
-                    )}
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 8 }}>
+                      <span className={`pill-badge ${userProfile?.role === "admin" ? "pill-solid-dark" : userProfile?.role === "tutor" || userProfile?.role === "instructor" ? "pill-tech" : "pill-success"}`} style={{ fontSize: "0.7rem", padding: "2px 8px" }}>
+                        {userProfile?.role === "admin" ? "Admin" : userProfile?.role === "tutor" || userProfile?.role === "instructor" ? "Tutor" : "Student"}
+                      </span>
+                      {userProfile?.regNumber && (
+                        <span style={{ fontSize: "0.75rem", color: "var(--text-muted)", fontWeight: 600 }}>
+                          ID: {userProfile.regNumber}
+                        </span>
+                      )}
+                    </div>
                   </div>
 
                   <Link
                     to="/dashboard"
                     onClick={() => setShowMenu(false)}
-                    style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 16px", fontSize: "0.875rem", color: "var(--text-secondary)" }}
+                    style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 16px", fontSize: "0.875rem", color: "var(--text-secondary)", fontWeight: 500 }}
                   >
-                    Learner Dashboard
+                    <span>📊</span> Learner Dashboard
                   </Link>
 
                   {userProfile?.role === "instructor" || userProfile?.role === "tutor" ? (
                     <Link
-                      to="/become-instructor"
+                      to="/teach-portal"
                       onClick={() => setShowMenu(false)}
-                      style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 16px", fontSize: "0.875rem", color: "var(--text-secondary)" }}
+                      style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 16px", fontSize: "0.875rem", color: "var(--text-secondary)", fontWeight: 500 }}
                     >
-                      Teaching Portal
+                      <span>💼</span> Teaching Portal
                     </Link>
                   ) : (
                     <Link
-                      to="/become-instructor"
+                      to="/teach"
                       onClick={() => setShowMenu(false)}
-                      style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 16px", fontSize: "0.875rem", color: "var(--text-secondary)" }}
+                      style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 16px", fontSize: "0.875rem", color: "var(--text-secondary)", fontWeight: 500 }}
                     >
-                      Teach on Peleekings
+                      <span>💼</span> Teach on Peleekings
                     </Link>
                   )}
 
                   {userProfile?.role === "admin" && (
-                    <Link
-                      to="/admin"
-                      onClick={() => setShowMenu(false)}
-                      style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 16px", fontSize: "0.875rem", color: "var(--text-primary)", fontWeight: 600 }}
-                    >
-                      Admin Dashboard
-                    </Link>
+                    <>
+                      <Link
+                        to="/teach-portal"
+                        onClick={() => setShowMenu(false)}
+                        style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 16px", fontSize: "0.875rem", color: "var(--text-secondary)", fontWeight: 500 }}
+                      >
+                        <span>💼</span> Teaching Portal
+                      </Link>
+                      <Link
+                        to="/admin"
+                        onClick={() => setShowMenu(false)}
+                        style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 16px", fontSize: "0.875rem", color: "var(--primary-learner)", fontWeight: 700 }}
+                      >
+                        <span>⚙️</span> Admin Dashboard
+                      </Link>
+                    </>
                   )}
 
-                  <div style={{ borderTop: "1px solid var(--border-subtle)", margin: "4px 0" }} />
+                  {/* Mobile Quick Navigation Links inside Profile Menu */}
+                  <div style={{ borderTop: "1px solid var(--border-subtle)", margin: "6px 0", paddingTop: 6 }}>
+                    <Link
+                      to="/"
+                      onClick={() => {
+                        setShowMenu(false);
+                        document.getElementById("courses-catalog-section")?.scrollIntoView({ behavior: "smooth" });
+                      }}
+                      style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 16px", fontSize: "0.85rem", color: "var(--text-secondary)" }}
+                    >
+                      <span>📚</span> Courses
+                    </Link>
+                    <Link
+                      to="/"
+                      onClick={() => {
+                        setShowMenu(false);
+                        document.getElementById("learning-paths-section")?.scrollIntoView({ behavior: "smooth" });
+                      }}
+                      style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 16px", fontSize: "0.85rem", color: "var(--text-secondary)" }}
+                    >
+                      <span>🧭</span> Learning Paths
+                    </Link>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowMenu(false);
+                        setShowResourcesModal(true);
+                      }}
+                      style={{ width: "100%", textAlign: "left", display: "flex", alignItems: "center", gap: 10, padding: "8px 16px", fontSize: "0.85rem", color: "var(--text-secondary)", background: "none", border: "none", cursor: "pointer", font: "inherit" }}
+                    >
+                      <span>📁</span> Resources
+                    </button>
+                    <Link
+                      to="/about"
+                      onClick={() => setShowMenu(false)}
+                      style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 16px", fontSize: "0.85rem", color: "var(--text-secondary)" }}
+                    >
+                      <span>ℹ️</span> About Us
+                    </Link>
+                  </div>
+
+                  <div style={{ borderTop: "1px solid var(--border-subtle)", margin: "6px 0" }} />
 
                   <button
                     onClick={handleLogout}
                     style={{
                       width: "100%",
                       textAlign: "left",
-                      padding: "10px 16px",
+                      padding: "8px 16px",
                       fontSize: "0.875rem",
                       color: "#DC2626",
                       display: "flex",
                       alignItems: "center",
                       gap: 8,
+                      background: "none",
+                      border: "none",
+                      cursor: "pointer",
+                      fontWeight: 600,
                     }}
                   >
-                    Log Out
+                    <span>⎋</span> Log Out
                   </button>
                 </div>
               )}
@@ -436,27 +606,29 @@ export default function Navbar() {
           </div>
         )}
 
-        {/* ── Mobile Hamburger Menu Toggle Button ───────────────────── */}
-        <button
-          className="mobile-hamburger-btn"
-          onClick={() => setShowMobileMenu(prev => !prev)}
-          aria-label="Toggle navigation menu"
-        >
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-            {showMobileMenu ? (
-              <>
-                <line x1="18" y1="6" x2="6" y2="18"></line>
-                <line x1="6" y1="6" x2="18" y2="18"></line>
-              </>
-            ) : (
-              <>
-                <line x1="3" y1="12" x2="21" y2="12"></line>
-                <line x1="3" y1="6" x2="21" y2="6"></line>
-                <line x1="3" y1="18" x2="21" y2="18"></line>
-              </>
-            )}
-          </svg>
-        </button>
+        {/* ── Mobile Hamburger Menu Toggle Button (Only shown when visitor is NOT logged in) ── */}
+        {!showAuthUser && (
+          <button
+            className="mobile-hamburger-btn"
+            onClick={() => setShowMobileMenu(prev => !prev)}
+            aria-label="Toggle navigation menu"
+          >
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+              {showMobileMenu ? (
+                <>
+                  <line x1="18" y1="6" x2="6" y2="18"></line>
+                  <line x1="6" y1="6" x2="18" y2="18"></line>
+                </>
+              ) : (
+                <>
+                  <line x1="3" y1="12" x2="21" y2="12"></line>
+                  <line x1="3" y1="6" x2="21" y2="6"></line>
+                  <line x1="3" y1="18" x2="21" y2="18"></line>
+                </>
+              )}
+            </svg>
+          </button>
+        )}
       </div>
 
       {/* ── Mobile Drawer ───────────────────────────────────────────── */}
@@ -562,8 +734,8 @@ export default function Navbar() {
       {/* ── Resources Modal ─────────────────────────────────────────── */}
       {showResourcesModal && (
         <div className="modal-backdrop-overlay" onClick={() => setShowResourcesModal(false)}>
-          <div className="modal-dialog-box" onClick={e => e.stopPropagation()}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+          <div className="modal-dialog-box" style={{ maxWidth: 640 }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
               <div>
                 <span className="pill-badge pill-tech" style={{ marginBottom: 6 }}>LEARNING ASSETS</span>
                 <h3 style={{ fontSize: "1.4rem", fontWeight: 800 }}>Peleekings Resources</h3>
@@ -571,41 +743,179 @@ export default function Navbar() {
               <button
                 className="btn-ghost"
                 onClick={() => setShowResourcesModal(false)}
-                style={{ fontSize: "1.2rem", cursor: "pointer" }}
+                style={{ fontSize: "1.2rem", cursor: "pointer", border: "none" }}
               >
                 ✕
               </button>
             </div>
 
-            <p style={{ color: "var(--text-secondary)", fontSize: "0.925rem", marginBottom: 24 }}>
-              Free curated guides, downloadable cheatsheets, and community resources to accelerate your learning journey.
+            <p style={{ color: "var(--text-secondary)", fontSize: "0.925rem", marginBottom: 20 }}>
+              Curated guides, downloadable cheatsheets, and community resources to accelerate your learning journey.
             </p>
 
-            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-              {[
-                { title: "2025 AI Tools & Automation Cheatsheet", type: "PDF • 2.4 MB", desc: "Top 50 prompt frameworks, API patterns, and no-code connectors." },
-                { title: "NYSC Tech Skill Acceleration Guide", type: "PDF • 1.8 MB", desc: "How corps members can build a freelance and remote career during service year." },
-                { title: "Figma UI/UX Starter Kit & Templates", type: "Design File • 8.1 MB", desc: "Clean component library, typography scale, and color tokens." },
-              ].map((res, i) => (
-                <div key={i} style={{ padding: "14px 18px", border: "1px solid var(--border-light)", borderRadius: "var(--radius-sm)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <div>
-                    <div style={{ fontWeight: 700, fontSize: "0.925rem", color: "var(--text-primary)" }}>{res.title}</div>
-                    <div style={{ fontSize: "0.8rem", color: "var(--text-muted)", marginTop: 2 }}>{res.desc}</div>
-                    <span className="pill-badge pill-success" style={{ marginTop: 6 }}>{res.type}</span>
-                  </div>
-                  <button
-                    className="btn btn-outline btn-sm"
-                    onClick={() => {
-                      alert(`Downloading ${res.title}...`);
+            {resourceUploadSuccess && (
+              <div style={{ background: "#ECFDF5", border: "1px solid #A7F3D0", color: "#065F46", padding: "10px 14px", borderRadius: "var(--radius-sm)", fontSize: "0.85rem", marginBottom: 16 }}>
+                {resourceUploadSuccess}
+              </div>
+            )}
+
+            {/* Admin & Tutor Upload Control */}
+            {(userProfile?.role === "admin" || userProfile?.role === "tutor" || userProfile?.role === "instructor") && (
+              <div style={{ marginBottom: 20 }}>
+                <button
+                  className="btn btn-solid-dark btn-sm"
+                  onClick={() => setShowResourceUploadForm((prev) => !prev)}
+                  style={{ display: "flex", alignItems: "center", gap: 6 }}
+                >
+                  <span>{showResourceUploadForm ? "✕ Close Upload Form" : "+ Upload New Resource"}</span>
+                </button>
+
+                {showResourceUploadForm && (
+                  <form
+                    onSubmit={handleUploadResource}
+                    style={{
+                      marginTop: 14,
+                      padding: 16,
+                      background: "#F8FAFC",
+                      border: "1px solid var(--border-light)",
+                      borderRadius: "var(--radius-sm)",
                     }}
                   >
+                    <div style={{ fontWeight: 700, fontSize: "0.9rem", marginBottom: 12, color: "var(--text-primary)" }}>
+                      Upload Platform Resource (Reflects Across Platform)
+                    </div>
+
+                    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                      <div>
+                        <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>
+                          RESOURCE TITLE *
+                        </label>
+                        <input
+                          type="text"
+                          required
+                          placeholder="e.g. 2025 AI Tools & Automation Cheatsheet"
+                          value={resourceUploadData.title}
+                          onChange={(e) => setResourceUploadData({ ...resourceUploadData, title: e.target.value })}
+                          className="form-field-input"
+                          style={{ padding: "8px 12px", fontSize: "0.875rem" }}
+                        />
+                      </div>
+
+                      <div>
+                        <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>
+                          DESCRIPTION
+                        </label>
+                        <input
+                          type="text"
+                          placeholder="Brief summary of this resource"
+                          value={resourceUploadData.description}
+                          onChange={(e) => setResourceUploadData({ ...resourceUploadData, description: e.target.value })}
+                          className="form-field-input"
+                          style={{ padding: "8px 12px", fontSize: "0.875rem" }}
+                        />
+                      </div>
+
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                        <div>
+                          <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>
+                            CATEGORY
+                          </label>
+                          <select
+                            value={resourceUploadData.category}
+                            onChange={(e) => setResourceUploadData({ ...resourceUploadData, category: e.target.value })}
+                            className="form-field-input"
+                            style={{ padding: "8px 12px", fontSize: "0.875rem" }}
+                          >
+                            <option>Tech &amp; Digital Skills</option>
+                            <option>Professional Skills</option>
+                            <option>Creative &amp; Design</option>
+                            <option>NYSC Guides</option>
+                          </select>
+                        </div>
+
+                        <div>
+                          <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>
+                            CHOOSE FILE (PDF, ZIP, DOC, IMG)
+                          </label>
+                          <input
+                            type="file"
+                            onChange={(e) => setResourceUploadData({ ...resourceUploadData, file: e.target.files[0] || null })}
+                            style={{ fontSize: "0.8rem", width: "100%" }}
+                          />
+                        </div>
+                      </div>
+
+                      <div>
+                        <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>
+                          OR EXTERNAL LINK (GOOGLE DRIVE, FIGMA, GITHUB)
+                        </label>
+                        <input
+                          type="url"
+                          placeholder="https://..."
+                          value={resourceUploadData.externalUrl}
+                          onChange={(e) => setResourceUploadData({ ...resourceUploadData, externalUrl: e.target.value })}
+                          className="form-field-input"
+                          style={{ padding: "8px 12px", fontSize: "0.875rem" }}
+                        />
+                      </div>
+
+                      <button
+                        type="submit"
+                        disabled={isUploadingResource}
+                        className="btn btn-solid-dark btn-sm"
+                        style={{ marginTop: 6 }}
+                      >
+                        {isUploadingResource ? "Uploading..." : "Publish Resource →"}
+                      </button>
+                    </div>
+                  </form>
+                )}
+              </div>
+            )}
+
+            <div style={{ display: "flex", flexDirection: "column", gap: 12, maxHeight: 360, overflowY: "auto" }}>
+              {platformResources.map((res) => (
+                <div
+                  key={res.id}
+                  style={{
+                    padding: "14px 18px",
+                    border: "1px solid var(--border-light)",
+                    borderRadius: "var(--radius-sm)",
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    background: "#FFFFFF",
+                  }}
+                >
+                  <div style={{ maxWidth: "72%" }}>
+                    <div style={{ fontWeight: 700, fontSize: "0.925rem", color: "var(--text-primary)" }}>{res.title}</div>
+                    <div style={{ fontSize: "0.8rem", color: "var(--text-muted)", marginTop: 2 }}>{res.desc}</div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6 }}>
+                      <span className="pill-badge pill-success">{res.type}</span>
+                      {res.fileSize && (
+                        <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>{res.fileSize}</span>
+                      )}
+                      {res.uploaderName && (
+                        <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
+                          • By {res.uploaderName}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <a
+                    href={res.fileUrl || "#"}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="btn btn-outline btn-sm"
+                    style={{ textDecoration: "none", flexShrink: 0 }}
+                  >
                     Download ↓
-                  </button>
+                  </a>
                 </div>
               ))}
             </div>
 
-            <div style={{ marginTop: 24, textAlign: "right" }}>
+            <div style={{ marginTop: 20, textAlign: "right" }}>
               <button className="btn btn-solid-dark" onClick={() => setShowResourcesModal(false)}>
                 Close
               </button>

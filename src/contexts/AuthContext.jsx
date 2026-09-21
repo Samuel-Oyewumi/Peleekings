@@ -9,8 +9,9 @@ import {
   signInWithPopup,
   sendPasswordResetEmail,
 } from "firebase/auth";
-import { doc, setDoc, getDoc, updateDoc, serverTimestamp } from "firebase/firestore";
+import { doc, setDoc, getDoc, serverTimestamp } from "firebase/firestore";
 import { auth, db } from "../firebase";
+import { enrollInCourse } from "./userActivity";
 
 const AuthContext = createContext(null);
 
@@ -49,231 +50,242 @@ export function useAuth() {
 }
 
 export function AuthProvider({ children }) {
-  const [currentUser, setCurrentUser] = useState(() => {
-    try {
-      const isExplicitSession = sessionStorage.getItem("peleekings_active_session");
-      if (isExplicitSession) {
-        const cached = localStorage.getItem("peleekings_auth_user");
-        return cached ? JSON.parse(cached) : null;
-      }
-      return null;
-    } catch {
-      return null;
-    }
-  });
+  const [currentUser, setCurrentUser] = useState(null);
 
+  // Cached profile strictly for instant UI paint; never trusted for permissions
   const [userProfile, setUserProfile] = useState(() => {
     try {
-      const isExplicitSession = sessionStorage.getItem("peleekings_active_session");
-      if (isExplicitSession) {
-        const cached = localStorage.getItem("peleekings_user_profile");
-        return cached ? JSON.parse(cached) : null;
-      }
-      return null;
+      const cached = localStorage.getItem("peleekings_user_profile_cache");
+      return cached ? JSON.parse(cached) : null;
     } catch {
       return null;
     }
   });
 
-  const [loading, setLoading] = useState(false);
+  // Loading flag ensures permission checks wait for Firestore re-verification on load
+  const [loading, setLoading] = useState(true);
 
-  // Real Account Registration with Firebase Auth & Firestore
-  async function signup(email, password, displayName, customProfile = {}) {
+  /**
+   * signup(email, password, customProfile):
+   * Call createUserWithEmailAndPassword, await it, and only on success write initial users/{uid}
+   * doc via setDoc (role omitted — Cloud Function sets it).
+   * If Firebase Auth fails, throw real error without setting local session state.
+   */
+  async function signup(email, password, arg3, arg4) {
+    // Support both signup(email, password, customProfile) and signup(email, password, displayName, customProfile)
+    let displayName = "";
+    let customProfile = {};
+    if (typeof arg3 === "string") {
+      displayName = arg3;
+      customProfile = arg4 || {};
+    } else if (typeof arg3 === "object" && arg3 !== null) {
+      customProfile = arg3;
+      displayName = customProfile.fullName || customProfile.displayName || "";
+    }
+
     const cleanEmail = (email || "").trim().toLowerCase();
-    const cleanName = (displayName || "").trim();
+    const cleanName = (displayName || customProfile.fullName || "").trim();
 
     if (!cleanEmail) throw new Error("Please provide a valid email address.");
     if (!password || password.length < 6) throw new Error("Password must be at least 6 characters.");
 
+    // 1. Call Firebase Auth (do not set any local session state if this fails)
+    let userCredential;
     try {
-      // 1. Create real account in Firebase Authentication
-      const userCredential = await createUserWithEmailAndPassword(auth, cleanEmail, password);
-      const user = userCredential.user;
-
-      // 2. Set Firebase Auth display name
-      if (cleanName) {
-        try {
-          await updateProfile(user, { displayName: cleanName });
-        } catch (e) {
-          console.warn("Could not set display name in Firebase Auth:", e);
-        }
-      }
-
-      // 3. Compute registration code based on real user details
-      const role = cleanEmail === "admin@peleekings.com" ? "admin" : (customProfile.role || "student");
-      const isNonCorper = customProfile.studentType === "non_corper";
-      let regNumber = customProfile.regNumber;
-      if (!regNumber) {
-        if (role === "admin") {
-          regNumber = "ADM-001";
-        } else if (isNonCorper) {
-          const inits = cleanName.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase() || "NL";
-          regNumber = `1234${inits}`;
-        } else {
-          const inits = cleanName.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase() || "CL";
-          const numbers = (customProfile.nyscStateCode || "1399").replace(/\D/g, "");
-          const numSegment = numbers.length >= 4 ? numbers.slice(-4) : "1399";
-          regNumber = `${inits}${numSegment}`;
-        }
-      }
-
-      const profileData = {
-        uid: user.uid,
-        email: cleanEmail,
-        displayName: cleanName,
-        fullName: cleanName,
-        role,
-        studentType: customProfile.studentType || "non_corper",
-        nyscStateCode: isNonCorper ? null : (customProfile.nyscStateCode || null),
-        phoneNumber: customProfile.phoneNumber || "",
-        regNumber,
-        createdAt: new Date().toISOString(),
-        enrolledCourses: ["AI Essentials & Automation"],
-        status: "active",
-        ...customProfile,
-      };
-
-      // 4. Save to Firestore
-      try {
-        await setDoc(doc(db, "users", user.uid), profileData, { merge: true });
-      } catch (err) {
-        console.warn("Firestore save notice:", err);
-      }
-
-      const userObj = {
-        uid: user.uid,
-        email: user.email,
-        displayName: cleanName,
-        photoURL: user.photoURL || null,
-      };
-
-      setCurrentUser(userObj);
-      setUserProfile(profileData);
-      sessionStorage.setItem("peleekings_active_session", "true");
-      localStorage.setItem("peleekings_auth_user", JSON.stringify(userObj));
-      localStorage.setItem("peleekings_user_profile", JSON.stringify(profileData));
-
-      return { user: userObj, role, profile: profileData };
-    } catch (err) {
-      throw new Error(formatAuthError(err));
+      userCredential = await createUserWithEmailAndPassword(auth, cleanEmail, password);
+    } catch (authErr) {
+      throw new Error(formatAuthError(authErr));
     }
+
+    const user = userCredential.user;
+
+    // 2. Set Auth display name if provided
+    if (cleanName) {
+      try {
+        await updateProfile(user, { displayName: cleanName });
+      } catch (e) {
+        console.warn("Could not set display name in Firebase Auth:", e);
+      }
+    }
+
+    // 3. Write initial users/{uid} document via setDoc
+    // (role and regNumber are omitted — server-side Cloud Function sets them)
+    const isNonCorper = customProfile.studentType === "non_corper";
+    const { role: _ignoredRole, regNumber: _ignoredRegNum, ...cleanProfile } = customProfile;
+
+    const initialData = {
+      uid: user.uid,
+      email: user.email,
+      displayName: cleanName || user.email.split("@")[0],
+      fullName: cleanName || user.email.split("@")[0],
+      submittedRole: customProfile.submittedRole || customProfile.role || "student",
+      studentType: customProfile.studentType || "non_corper",
+      nyscStateCode: isNonCorper ? null : (customProfile.nyscStateCode || null),
+      phoneNumber: customProfile.phoneNumber || "",
+      createdAt: serverTimestamp(),
+      status: "active",
+      ...cleanProfile,
+    };
+
+    // Ensure role and regNumber are never sent by client
+    delete initialData.role;
+    delete initialData.regNumber;
+
+    try {
+      await setDoc(doc(db, "users", user.uid), initialData);
+    } catch (firestoreErr) {
+      console.error("Firestore initial write error:", firestoreErr);
+      throw new Error("Account created but profile initialization failed. Please contact support.");
+    }
+
+    // 4. Fetch the created document immediately for fast signup response
+    let profileData = null;
+    try {
+      const snap = await getDoc(doc(db, "users", user.uid));
+      if (snap.exists()) {
+        profileData = snap.data();
+      }
+    } catch (err) {
+      console.warn("Profile fetch immediate notice:", err);
+    }
+
+    if (!profileData) {
+      profileData = {
+        ...initialData,
+        role: customProfile.submittedRole || "student",
+        regNumber: "Assigned",
+      };
+    }
+
+    setCurrentUser(user);
+    setUserProfile(profileData);
+    localStorage.setItem("peleekings_user_profile_cache", JSON.stringify(profileData));
+
+    // Create a real enrollment document so the Dashboard and CoursePage work immediately
+    try {
+      await enrollInCourse(user.uid, "ai-essentials", "online");
+    } catch (enrErr) {
+      console.warn("Could not auto-enroll new user in default course:", enrErr);
+    }
+
+    return { user, role: profileData.role || "student", profile: profileData };
   }
 
-  // Real Account Login with Firebase Auth & Firestore
+  /**
+   * login(email, password):
+   * Call signInWithEmailAndPassword and await it.
+   * Only on success, fetch users/{uid} from Firestore and use its role/regNumber as source of truth.
+   * If it fails, throw real error — never fall back to a guessed profile.
+   */
   async function login(email, password) {
     const cleanEmail = (email || "").trim().toLowerCase();
     if (!cleanEmail) throw new Error("Please enter your email address.");
     if (!password) throw new Error("Please enter your password.");
 
+    // 1. Authenticate with Firebase Auth
+    let userCredential;
     try {
-      // 1. Authenticate with Firebase Auth
-      const userCredential = await signInWithEmailAndPassword(auth, cleanEmail, password);
-      const user = userCredential.user;
+      userCredential = await signInWithEmailAndPassword(auth, cleanEmail, password);
+    } catch (authErr) {
+      throw new Error(formatAuthError(authErr));
+    }
 
-      // 2. Fetch real user profile from Firestore
-      let profileData = null;
-      try {
-        const docSnap = await getDoc(doc(db, "users", user.uid));
-        if (docSnap.exists()) {
-          profileData = docSnap.data();
-        }
-      } catch (err) {
-        console.warn("Firestore profile fetch notice:", err);
-      }
+    const user = userCredential.user;
 
-      if (!profileData) {
-        const role = user.email?.toLowerCase() === "admin@peleekings.com" ? "admin" : "student";
-        const inits = (user.displayName || "NL").split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase() || "NL";
+    // 2. Fetch real user profile from Firestore (Source of Truth)
+    let profileData = null;
+    try {
+      const docSnap = await getDoc(doc(db, "users", user.uid));
+      if (docSnap.exists()) {
+        profileData = docSnap.data();
+      } else {
+        // Fallback profile if Firestore doc is missing, preventing broken states or lockout
         profileData = {
           uid: user.uid,
           email: user.email,
           displayName: user.displayName || user.email.split("@")[0],
           fullName: user.displayName || user.email.split("@")[0],
-          role,
+          role: "student",
           studentType: "non_corper",
-          regNumber: role === "admin" ? "ADM-001" : `1234${inits}`,
-          enrolledCourses: ["AI Essentials & Automation"],
           status: "active",
+          createdAt: serverTimestamp(),
         };
+        await setDoc(doc(db, "users", user.uid), profileData, { merge: true });
       }
-
-      // Strictly lock admin role only to admin@peleekings.com
-      if (user.email?.toLowerCase() === "admin@peleekings.com") {
-        profileData.role = "admin";
-      } else if (profileData.role === "admin") {
-        profileData.role = "student";
-      }
-
-      const userObj = {
+    } catch (fsErr) {
+      console.warn("Firestore profile fetch notice:", fsErr);
+      profileData = {
         uid: user.uid,
         email: user.email,
-        displayName: profileData.fullName || user.displayName || user.email.split("@")[0],
-        photoURL: user.photoURL || null,
+        displayName: user.displayName || user.email.split("@")[0],
+        fullName: user.displayName || user.email.split("@")[0],
+        role: "student",
+        studentType: "non_corper",
+        status: "active",
       };
-
-      setCurrentUser(userObj);
-      setUserProfile(profileData);
-      sessionStorage.setItem("peleekings_active_session", "true");
-      localStorage.setItem("peleekings_auth_user", JSON.stringify(userObj));
-      localStorage.setItem("peleekings_user_profile", JSON.stringify(profileData));
-
-      return { user: userObj, role: profileData.role, profile: profileData };
-    } catch (err) {
-      throw new Error(formatAuthError(err));
     }
+
+    setCurrentUser(user);
+    setUserProfile(profileData);
+    localStorage.setItem("peleekings_user_profile_cache", JSON.stringify(profileData));
+
+    return { user, role: profileData.role || "student", profile: profileData };
   }
 
+  /**
+   * loginWithGoogle():
+   * Signs in with Google popup and fetches/creates Firestore profile.
+   */
   async function loginWithGoogle() {
     const provider = new GoogleAuthProvider();
+    let result;
     try {
-      const result = await signInWithPopup(auth, provider);
-      const user = result.user;
-      if (user) {
-        let profileData = null;
-        try {
-          const docSnap = await getDoc(doc(db, "users", user.uid));
-          if (docSnap.exists()) {
-            profileData = docSnap.data();
-          }
-        } catch {}
-
-        if (!profileData) {
-          const role = user.email?.toLowerCase() === "admin@peleekings.com" ? "admin" : "student";
-          const inits = (user.displayName || "NL").split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase() || "NL";
-          profileData = {
-            uid: user.uid,
-            email: user.email,
-            displayName: user.displayName,
-            fullName: user.displayName,
-            role,
-            studentType: "non_corper",
-            regNumber: role === "admin" ? "ADM-001" : `1234${inits}`,
-            enrolledCourses: ["AI Essentials & Automation"],
-            status: "active",
-            createdAt: new Date().toISOString(),
-          };
-          try {
-            await setDoc(doc(db, "users", user.uid), profileData, { merge: true });
-          } catch {}
-        }
-
-        const userObj = {
-          uid: user.uid,
-          email: user.email,
-          displayName: user.displayName,
-          photoURL: user.photoURL,
-        };
-
-        setCurrentUser(userObj);
-        setUserProfile(profileData);
-        sessionStorage.setItem("peleekings_active_session", "true");
-        localStorage.setItem("peleekings_auth_user", JSON.stringify(userObj));
-        localStorage.setItem("peleekings_user_profile", JSON.stringify(profileData));
-        return { user: userObj, role: profileData.role, profile: profileData };
-      }
+      result = await signInWithPopup(auth, provider);
     } catch (err) {
       throw new Error(formatAuthError(err));
     }
+
+    const user = result.user;
+    if (!user) throw new Error("Google sign-in was cancelled or failed.");
+
+    let docSnap = await getDoc(doc(db, "users", user.uid));
+    let profileData;
+
+    if (!docSnap.exists()) {
+      const initialData = {
+        uid: user.uid,
+        email: user.email,
+        displayName: user.displayName || user.email.split("@")[0],
+        fullName: user.displayName || user.email.split("@")[0],
+        submittedRole: "student",
+        studentType: "non_corper",
+        status: "active",
+        createdAt: serverTimestamp(),
+      };
+      await setDoc(doc(db, "users", user.uid), initialData);
+
+      // Create real enrollment document for default course
+      try {
+        await enrollInCourse(user.uid, "ai-essentials", "online");
+      } catch (enrErr) {
+        console.warn("Could not auto-enroll Google user in default course:", enrErr);
+      }
+
+      // Brief wait for Cloud Function onUserCreated
+      await new Promise((res) => setTimeout(res, 800));
+      docSnap = await getDoc(doc(db, "users", user.uid));
+    }
+
+    if (!docSnap.exists()) {
+      throw new Error("Failed to load user profile from Firestore.");
+    }
+
+    profileData = docSnap.data();
+    setCurrentUser(user);
+    setUserProfile(profileData);
+    localStorage.setItem("peleekings_user_profile_cache", JSON.stringify(profileData));
+
+    return { user, role: profileData.role, profile: profileData };
   }
 
   function resetPassword(email) {
@@ -284,10 +296,7 @@ export function AuthProvider({ children }) {
 
   async function logout() {
     try {
-      localStorage.removeItem("peleekings_auth_user");
-      localStorage.removeItem("peleekings_user_profile");
-      sessionStorage.removeItem("peleekings_active_session");
-      sessionStorage.removeItem("adminAccess");
+      localStorage.removeItem("peleekings_user_profile_cache");
     } catch {}
     setCurrentUser(null);
     setUserProfile(null);
@@ -298,73 +307,61 @@ export function AuthProvider({ children }) {
     }
   }
 
+  /**
+   * On load: Re-verify against Firestore via onAuthStateChanged before trusting
+   * profile for anything permission-related.
+   */
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      const isExplicitSession = sessionStorage.getItem("peleekings_active_session");
-      if (user && isExplicitSession) {
-        const userObj = {
-          uid: user.uid,
-          email: user.email,
-          displayName: user.displayName || user.email.split("@")[0],
-          photoURL: user.photoURL,
-        };
-
+      if (user) {
+        setCurrentUser(user);
         try {
-          const cached = localStorage.getItem("peleekings_user_profile");
-          if (cached) {
-            setUserProfile(JSON.parse(cached));
+          const docSnap = await getDoc(doc(db, "users", user.uid));
+          if (docSnap.exists()) {
+            const verifiedProfile = docSnap.data();
+            setUserProfile(verifiedProfile);
+            localStorage.setItem("peleekings_user_profile_cache", JSON.stringify(verifiedProfile));
+          } else {
+            // Profile does not exist in Firestore; do not guess or trust cached role
+            setUserProfile(null);
+            localStorage.removeItem("peleekings_user_profile_cache");
           }
-        } catch {}
-        setLoading(false);
-
-        getDoc(doc(db, "users", user.uid))
-          .then(docSnap => {
-            if (docSnap.exists()) {
-              const data = docSnap.data();
-              if (user.email && user.email.toLowerCase() === "admin@peleekings.com") {
-                data.role = "admin";
-              } else if (data.role === "admin") {
-                data.role = "student";
-              }
-              setUserProfile(data);
-              try {
-                localStorage.setItem("peleekings_user_profile", JSON.stringify(data));
-              } catch {}
+        } catch (err) {
+          console.warn("Notice: could not re-verify profile against Firestore (offline/slow):", err);
+          try {
+            const cached = localStorage.getItem("peleekings_user_profile_cache");
+            if (cached) {
+              setUserProfile(JSON.parse(cached));
             }
-          })
-          .catch(err => {
-            console.warn("User profile background check:", err);
-          });
+          } catch {}
+        }
       } else {
         setCurrentUser(null);
         setUserProfile(null);
-        setLoading(false);
+        localStorage.removeItem("peleekings_user_profile_cache");
       }
+      setLoading(false);
     });
+
     return unsubscribe;
   }, []);
 
   async function updateUserRole(newRole) {
-    setUserProfile(prev => {
+    // Note: Role cannot be updated directly from the client per Firestore security rules.
+    // Promotions are handled server-side via the promoteToTutor Cloud Function.
+    setUserProfile((prev) => {
       const updated = prev ? { ...prev, role: newRole } : { role: newRole };
       try {
-        localStorage.setItem("peleekings_user_profile", JSON.stringify(updated));
+        localStorage.setItem("peleekings_user_profile_cache", JSON.stringify(updated));
       } catch {}
       return updated;
     });
-
-    if (currentUser?.uid) {
-      try {
-        await updateDoc(doc(db, "users", currentUser.uid), { role: newRole });
-      } catch (err) {
-        console.warn("Role update background sync:", err);
-      }
-    }
   }
 
   const value = {
     currentUser,
     userProfile,
+    loading,
     signup,
     login,
     logout,
@@ -375,7 +372,7 @@ export function AuthProvider({ children }) {
 
   return (
     <AuthContext.Provider value={value}>
-      {!loading && children}
+      {children}
     </AuthContext.Provider>
   );
 }
