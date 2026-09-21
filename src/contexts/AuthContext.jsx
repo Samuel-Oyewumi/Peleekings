@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState } from "react";
+import { createContext, useContext, useEffect, useState, useRef } from "react";
 import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
@@ -64,6 +64,10 @@ export function AuthProvider({ children }) {
 
   // Loading flag ensures permission checks wait for Firestore re-verification on load
   const [loading, setLoading] = useState(true);
+
+  // Tracks whether login()/signup() just freshly fetched the Firestore profile.
+  // When true, onAuthStateChanged skips the redundant second getDoc call.
+  const profileJustFetched = useRef(false);
 
   /**
    * signup(email, password, customProfile):
@@ -138,35 +142,22 @@ export function AuthProvider({ children }) {
       throw new Error("Account created but profile initialization failed. Please contact support.");
     }
 
-    // 4. Fetch the created document immediately for fast signup response
-    let profileData = null;
-    try {
-      const snap = await getDoc(doc(db, "users", user.uid));
-      if (snap.exists()) {
-        profileData = snap.data();
-      }
-    } catch (err) {
-      console.warn("Profile fetch immediate notice:", err);
-    }
+    // Use local initialData directly — no need to round-trip Firestore immediately after setDoc.
+    // The Cloud Function will asynchronously assign role + regNumber; we show a sensible default.
+    const profileData = {
+      ...initialData,
+      role: customProfile.submittedRole || "student",
+      regNumber: "Assigned",
+    };
 
-    if (!profileData) {
-      profileData = {
-        ...initialData,
-        role: customProfile.submittedRole || "student",
-        regNumber: "Assigned",
-      };
-    }
-
+    profileJustFetched.current = true;
     setCurrentUser(user);
     setUserProfile(profileData);
     localStorage.setItem("peleekings_user_profile_cache", JSON.stringify(profileData));
 
-    // Create a real enrollment document so the Dashboard and CoursePage work immediately
-    try {
-      await enrollInCourse(user.uid, "ai-essentials", "online");
-    } catch (enrErr) {
-      console.warn("Could not auto-enroll new user in default course:", enrErr);
-    }
+    // Fire-and-forget: create enrollment doc in background — do NOT block signup completion
+    enrollInCourse(user.uid, "ai-essentials", "online")
+      .catch(err => console.warn("Could not auto-enroll new user in default course:", err));
 
     return { user, role: profileData.role || "student", profile: profileData };
   }
@@ -228,6 +219,7 @@ export function AuthProvider({ children }) {
     setCurrentUser(user);
     setUserProfile(profileData);
     localStorage.setItem("peleekings_user_profile_cache", JSON.stringify(profileData));
+    profileJustFetched.current = true;
 
     return { user, role: profileData.role || "student", profile: profileData };
   }
@@ -264,12 +256,9 @@ export function AuthProvider({ children }) {
       };
       await setDoc(doc(db, "users", user.uid), initialData);
 
-      // Create real enrollment document for default course
-      try {
-        await enrollInCourse(user.uid, "ai-essentials", "online");
-      } catch (enrErr) {
-        console.warn("Could not auto-enroll Google user in default course:", enrErr);
-      }
+      // Create real enrollment document for default course — fire and forget
+      enrollInCourse(user.uid, "ai-essentials", "online")
+        .catch(enrErr => console.warn("Could not auto-enroll Google user in default course:", enrErr));
 
       // Brief wait for Cloud Function onUserCreated
       await new Promise((res) => setTimeout(res, 800));
@@ -281,6 +270,7 @@ export function AuthProvider({ children }) {
     }
 
     profileData = docSnap.data();
+    profileJustFetched.current = true;
     setCurrentUser(user);
     setUserProfile(profileData);
     localStorage.setItem("peleekings_user_profile_cache", JSON.stringify(profileData));
@@ -308,13 +298,22 @@ export function AuthProvider({ children }) {
   }
 
   /**
-   * On load: Re-verify against Firestore via onAuthStateChanged before trusting
-   * profile for anything permission-related.
+   * On load: Re-verify against Firestore via onAuthStateChanged.
+   * If login()/signup() already freshly fetched the profile this session,
+   * skip the redundant Firestore getDoc and just resolve loading.
    */
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user) {
         setCurrentUser(user);
+
+        // Skip duplicate Firestore read when we just completed login/signup
+        if (profileJustFetched.current) {
+          profileJustFetched.current = false;
+          setLoading(false);
+          return;
+        }
+
         try {
           const docSnap = await getDoc(doc(db, "users", user.uid));
           if (docSnap.exists()) {
