@@ -14,6 +14,13 @@ export default function Home() {
   const [showHowItWorksModal, setShowHowItWorksModal] = useState(false);
   const [userActivity, setUserActivity] = useState(() => getUserActivity(currentUser?.uid));
 
+  // Redirect authenticated users away from the landing page
+  useEffect(() => {
+    if (currentUser) {
+      navigate("/dashboard", { replace: true });
+    }
+  }, [currentUser, navigate]);
+
   useEffect(() => {
     setUserActivity(getUserActivity(currentUser?.uid));
     function handleUpdate(e) {
@@ -24,6 +31,9 @@ export default function Home() {
     window.addEventListener("peleekings_activity_updated", handleUpdate);
     return () => window.removeEventListener("peleekings_activity_updated", handleUpdate);
   }, [currentUser]);
+
+  // Don't render anything while redirecting
+  if (currentUser) return null;
 
   const activeCourse = userActivity?.enrolledCourses?.[0] || {
     id: "ai-essentials",
