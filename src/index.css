@@ -1314,6 +1314,127 @@ img {
   to { opacity: 1; transform: scale(1); }
 }
 
+/* ── Mobile Layout Helpers & Components ──────────────────────────────── */
+.portal-sidebar-backdrop {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(15, 23, 42, 0.55);
+  backdrop-filter: blur(3px);
+  z-index: 1100;
+  animation: fadeIn 0.2s ease;
+}
+
+.sidebar-mobile-header {
+  display: none;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 14px 16px;
+  border-bottom: 1px solid var(--border-light);
+  margin-bottom: 16px;
+}
+
+.classroom-sidebar-mobile-header {
+  display: none;
+}
+
+.sidebar-close-btn {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  background: var(--bg-subtle);
+  color: var(--text-secondary);
+  font-size: 1rem;
+  font-weight: 700;
+  border: none;
+  cursor: pointer;
+  transition: var(--transition);
+}
+.sidebar-close-btn:hover {
+  background: #E2E8F0;
+  color: var(--text-primary);
+}
+
+.mobile-sidebar-toggle-btn {
+  display: none;
+}
+
+.mobile-curriculum-btn {
+  display: none;
+}
+
+.dashboard-mobile-quick-nav {
+  display: none;
+  gap: 8px;
+  overflow-x: auto;
+  white-space: nowrap;
+  padding-bottom: 12px;
+  margin-bottom: 20px;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.dashboard-mobile-quick-nav::-webkit-scrollbar {
+  display: none;
+}
+
+.dashboard-mobile-quick-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border-radius: var(--radius-full);
+  background: #FFFFFF;
+  border: 1px solid var(--border-light);
+  color: var(--text-secondary);
+  font-size: 0.825rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: var(--transition);
+  flex-shrink: 0;
+}
+.dashboard-mobile-quick-pill:hover {
+  background: var(--bg-subtle);
+  color: var(--text-primary);
+}
+.dashboard-mobile-quick-pill.active {
+  background: var(--primary-learner);
+  color: #FFFFFF;
+  border-color: var(--primary-learner);
+  box-shadow: var(--shadow-xs);
+}
+
+.dashboard-tab-panel {
+  background: #FFFFFF;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  padding: 32px;
+}
+
+.dashboard-browse-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.dashboard-catalog-search {
+  width: 260px;
+  margin-bottom: 0;
+}
+
+.dashboard-catalog-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(270px, 1fr));
+  gap: 20px;
+}
+
 /* ── Responsive Breakpoints ──────────────────────────────────────────── */
 @media (max-width: 860px) {
   .nav-links-menu {
@@ -1333,13 +1454,70 @@ img {
   }
   .dashboard-page-layout {
     grid-template-columns: 1fr;
+    position: relative;
   }
+
+  /* Off-canvas mobile sidebar drawer for Dashboard */
+  .portal-left-sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: 290px;
+    max-width: 85vw;
+    z-index: 1200;
+    box-shadow: 4px 0 24px rgba(0, 0, 0, 0.2);
+    transform: translateX(-100%);
+    transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    overflow-y: auto;
+    background: #FFFFFF;
+  }
+  .portal-left-sidebar.mobile-open {
+    transform: translateX(0);
+  }
+  .sidebar-mobile-header {
+    display: flex;
+  }
+  .mobile-sidebar-toggle-btn {
+    display: inline-flex !important;
+    align-items: center;
+    gap: 6px;
+  }
+  .dashboard-mobile-quick-nav {
+    display: flex;
+  }
+
+  /* Off-canvas mobile curriculum sidebar for Classroom */
   .classroom-split-layout {
     grid-template-columns: 1fr;
+    position: relative;
   }
   .classroom-curriculum-sidebar {
-    display: none;
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 320px;
+    max-width: 88vw;
+    z-index: 1200;
+    background: #FFFFFF;
+    box-shadow: -4px 0 24px rgba(0, 0, 0, 0.2);
+    transform: translateX(100%);
+    transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    overflow-y: auto;
+    display: block;
+    padding-top: 10px;
   }
+  .classroom-curriculum-sidebar.mobile-open {
+    transform: translateX(0);
+  }
+  .classroom-sidebar-mobile-header {
+    display: flex;
+  }
+  .mobile-curriculum-btn {
+    display: inline-flex !important;
+  }
+
   .stats-cards-deck {
     grid-template-columns: repeat(2, 1fr);
   }
@@ -1381,6 +1559,59 @@ img {
     width: 100%;
     overflow-x: auto;
     padding-bottom: 6px;
+    scrollbar-width: none;
+  }
+  .filter-pills-row::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Dashboard mobile adjustments */
+  .dashboard-main-area {
+    padding: 16px 14px;
+  }
+  .dashboard-greeting-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+    margin-bottom: 18px;
+  }
+  .dashboard-greeting-row h1 {
+    font-size: 1.45rem !important;
+  }
+  .dashboard-tab-panel {
+    padding: 18px 14px !important;
+    border-radius: var(--radius-sm);
+  }
+  .continue-learning-widget-card {
+    flex-direction: column;
+    align-items: stretch;
+    padding: 18px;
+  }
+  .continue-learning-widget-card img {
+    width: 100% !important;
+    height: 140px !important;
+  }
+  .dashboard-browse-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+  .dashboard-catalog-search {
+    width: 100% !important;
+  }
+  .dashboard-catalog-grid {
+    grid-template-columns: 1fr !important;
+  }
+  .profile-fields-row {
+    grid-template-columns: 1fr !important;
+  }
+  .auth-card-container {
+    padding: 24px 16px !important;
+  }
+  .modal-dialog-box {
+    width: 95% !important;
+    padding: 20px 16px !important;
+    max-height: 92vh;
   }
 }
 

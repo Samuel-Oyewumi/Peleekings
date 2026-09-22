@@ -540,10 +540,12 @@ export default function CoursePage() {
             </div>
             {/* Mobile Curriculum Toggle Button */}
             <button
+              type="button"
               className="btn btn-outline btn-sm mobile-curriculum-btn"
               onClick={() => setShowMobileCurriculum(prev => !prev)}
+              aria-label="Toggle curriculum"
             >
-              ☰ View Curriculum
+              {showMobileCurriculum ? "✕ Close" : "☰ Curriculum"}
             </button>
           </div>
 
@@ -563,12 +565,31 @@ export default function CoursePage() {
           </div>
         </div>
 
+        {/* Mobile Curriculum Backdrop */}
+        {showMobileCurriculum && (
+          <div
+            className="portal-sidebar-backdrop"
+            onClick={() => setShowMobileCurriculum(false)}
+            aria-label="Close curriculum"
+          />
+        )}
+
         {/* Classroom Split Layout */}
         <div className="classroom-split-layout">
           {/* Left: Collapsible Curriculum Sidebar */}
-          <aside className="classroom-curriculum-sidebar">
-            <div style={{ padding: "0 20px 14px", fontWeight: 800, fontSize: "0.95rem", color: "var(--text-primary)" }}>
-              Course Curriculum
+          <aside className={`classroom-curriculum-sidebar ${showMobileCurriculum ? "mobile-open" : ""}`}>
+            <div className="classroom-sidebar-mobile-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "16px 20px 14px" }}>
+              <span style={{ fontWeight: 800, fontSize: "0.95rem", color: "var(--text-primary)" }}>
+                Course Curriculum
+              </span>
+              <button
+                type="button"
+                className="sidebar-close-btn"
+                onClick={() => setShowMobileCurriculum(false)}
+                aria-label="Close curriculum"
+              >
+                ✕
+              </button>
             </div>
 
             {modules.map((mod) => (
@@ -583,7 +604,10 @@ export default function CoursePage() {
                       <div
                         key={lesson.id}
                         className={`lesson-curriculum-row ${isActive ? "active" : ""}`}
-                        onClick={() => setActiveLessonId(lesson.id)}
+                        onClick={() => {
+                          setActiveLessonId(lesson.id);
+                          setShowMobileCurriculum(false);
+                        }}
                       >
                         <div
                           className={`lesson-check-icon ${lesson.completed ? "completed" : ""}`}

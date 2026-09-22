@@ -229,9 +229,33 @@ export default function Dashboard() {
           </button>
         </div>
       )}
+      {/* Mobile Drawer Backdrop */}
+      {showMobileSidebar && (
+        <div
+          className="portal-sidebar-backdrop"
+          onClick={() => setShowMobileSidebar(false)}
+          aria-label="Close menu"
+        />
+      )}
 
       {/* ── Left Sidebar (Screen 5) ─────────────────────────────────── */}
       <aside className={`portal-left-sidebar ${showMobileSidebar ? "mobile-open" : ""}`}>
+        {/* Mobile-only close header */}
+        <div className="sidebar-mobile-header">
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <div className="brand-logo-icon" style={{ width: 28, height: 28, fontSize: "0.9rem" }}>P</div>
+            <span style={{ fontWeight: 800, fontSize: "1rem" }}>Peleekings</span>
+          </div>
+          <button
+            type="button"
+            className="sidebar-close-btn"
+            onClick={() => setShowMobileSidebar(false)}
+            aria-label="Close navigation"
+          >
+            ✕
+          </button>
+        </div>
+
         {/* User Card */}
         <div className="sidebar-user-card">
           <div className="user-avatar-circle">
@@ -259,7 +283,7 @@ export default function Dashboard() {
         {/* Navigation Menu */}
         <nav className="portal-nav-menu">
           {[
-                      { id: "dashboard", label: "Dashboard", icon: "📊" },
+            { id: "dashboard", label: "Dashboard", icon: "📊" },
             { id: "my-courses", label: "My Courses", icon: "📚" },
             { id: "browse-courses", label: "Browse Courses", icon: "🔍" },
             { id: "assignments", label: "Assignments", icon: "📝" },
@@ -310,9 +334,10 @@ export default function Dashboard() {
           <div>
             <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
               <button
+                type="button"
                 className="btn btn-outline btn-sm mobile-sidebar-toggle-btn"
                 onClick={() => setShowMobileSidebar(prev => !prev)}
-                style={{ display: "none" }}
+                aria-label="Open menu"
               >
                 ☰ Menu
               </button>
@@ -327,6 +352,34 @@ export default function Dashboard() {
           <div style={{ fontSize: "0.875rem", color: "var(--text-muted)", fontWeight: 500, background: "#FFFFFF", border: "1px solid var(--border-light)", padding: "8px 16px", borderRadius: "var(--radius-full)" }}>
             {new Date().toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "short", day: "numeric" })}
           </div>
+        </div>
+
+        {/* ── Mobile Quick Tabs Strip ── */}
+        <div className="dashboard-mobile-quick-nav">
+          {[
+            { id: "dashboard", label: "Overview", icon: "📊" },
+            { id: "my-courses", label: "My Courses", icon: "📚" },
+            { id: "browse-courses", label: "Browse", icon: "🔍" },
+            { id: "assignments", label: "Assignments", icon: "📝" },
+          ].map(item => (
+            <button
+              key={item.id}
+              type="button"
+              className={`dashboard-mobile-quick-pill ${activeNav === item.id ? "active" : ""}`}
+              onClick={() => setActiveNav(item.id)}
+            >
+              <span>{item.icon}</span>
+              <span>{item.label}</span>
+            </button>
+          ))}
+          <button
+            type="button"
+            className="dashboard-mobile-quick-pill"
+            onClick={() => setShowMobileSidebar(true)}
+          >
+            <span>☰</span>
+            <span>More</span>
+          </button>
         </div>
 
         {/* Stage 6: Dismissible Tutor Apply Banner */}
@@ -585,10 +638,10 @@ export default function Dashboard() {
 
         {/* ── TAB: MY COURSES ────────────────────────────────────────── */}
         {activeNav === "my-courses" && (
-          <div style={{ background: "#FFFFFF", border: "1px solid var(--border-light)", borderRadius: "var(--radius-md)", padding: 32 }}>
+          <div className="dashboard-tab-panel">
             <h2 style={{ fontSize: "1.5rem", fontWeight: 800, marginBottom: 6 }}>My Enrolled Courses</h2>
             <p style={{ color: "var(--text-muted)", fontSize: "0.9rem", marginBottom: 24 }}>Manage your active learning modules and track progress.</p>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 20 }}>
+            <div className="dashboard-catalog-grid">
               {enrolledCourses.map(c => (
                 <div key={c.id} style={{ border: "1px solid var(--border-light)", borderRadius: "var(--radius-md)", overflow: "hidden", background: "#F8FAFC" }}>
                   <img src={c.image} alt={c.title} style={{ width: "100%", height: 140, objectFit: "cover" }} />
@@ -655,8 +708,8 @@ export default function Dashboard() {
           }
 
           return (
-            <div>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 16, marginBottom: 24 }}>
+            <div className="dashboard-tab-panel">
+              <div className="dashboard-browse-header">
                 <div>
                   <h2 style={{ fontSize: "1.5rem", fontWeight: 800, marginBottom: 6 }}>Browse All Courses</h2>
                   <p style={{ color: "var(--text-muted)", fontSize: "0.9rem" }}>Enroll in any course directly from your dashboard.</p>
@@ -666,13 +719,12 @@ export default function Dashboard() {
                   placeholder="Search courses…"
                   value={catalogSearch}
                   onChange={e => setCatalogSearch(e.target.value)}
-                  className="form-field-input"
-                  style={{ width: 260, marginBottom: 0 }}
+                  className="form-field-input dashboard-catalog-search"
                 />
               </div>
 
               {/* Category filters */}
-              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 24 }}>
+              <div className="filter-pills-row" style={{ marginBottom: 24 }}>
                 {categories.map(cat => (
                   <button
                     key={cat}
@@ -687,6 +739,7 @@ export default function Dashboard() {
                       background: catalogFilter === cat ? "var(--primary-learner)" : "#FFFFFF",
                       color: catalogFilter === cat ? "#FFFFFF" : "var(--text-secondary)",
                       transition: "all 0.15s",
+                      whiteSpace: "nowrap",
                     }}
                   >
                     {cat}
@@ -695,7 +748,7 @@ export default function Dashboard() {
               </div>
 
               {/* Course cards grid */}
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(270px, 1fr))", gap: 20 }}>
+              <div className="dashboard-catalog-grid">
                 {filtered.map(course => {
                   const isEnrolled = enrolledIds.has(course.id);
                   const isEnrolling = enrollingId === course.id;
@@ -746,7 +799,7 @@ export default function Dashboard() {
 
         {/* ── TAB: ASSIGNMENTS ───────────────────────────────────────── */}
         {activeNav === "assignments" && (
-          <div style={{ background: "#FFFFFF", border: "1px solid var(--border-light)", borderRadius: "var(--radius-md)", padding: 32 }}>
+          <div className="dashboard-tab-panel">
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 16, marginBottom: 24 }}>
               <div>
                 <h2 style={{ fontSize: "1.5rem", fontWeight: 800, marginBottom: 6 }}>Assignments &amp; Projects</h2>
@@ -846,7 +899,7 @@ export default function Dashboard() {
 
         {/* ── TAB: TESTS ─────────────────────────────────────────────── */}
         {activeNav === "tests" && (
-          <div style={{ background: "#FFFFFF", border: "1px solid var(--border-light)", borderRadius: "var(--radius-md)", padding: 32 }}>
+          <div className="dashboard-tab-panel">
             <h2 style={{ fontSize: "1.5rem", fontWeight: 800, marginBottom: 6 }}>Quizzes &amp; Assessments</h2>
             <p style={{ color: "var(--text-muted)", fontSize: "0.9rem", marginBottom: 24 }}>Modular evaluations testing your practical mastery.</p>
             <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
@@ -874,7 +927,7 @@ export default function Dashboard() {
 
         {/* ── TAB: CERTIFICATES ──────────────────────────────────────── */}
         {activeNav === "certificates" && (
-          <div style={{ background: "#FFFFFF", border: "1px solid var(--border-light)", borderRadius: "var(--radius-md)", padding: 32 }}>
+          <div className="dashboard-tab-panel">
             <h2 style={{ fontSize: "1.5rem", fontWeight: 800, marginBottom: 6 }}>Certificates of Completion</h2>
             <p style={{ color: "var(--text-muted)", fontSize: "0.9rem", marginBottom: 24 }}>Official verified Peleekings credentials with your Registration Code.</p>
             <div style={{ padding: 28, border: "2px solid var(--primary-learner-border)", background: "linear-gradient(135deg, #FAF5FF, #EFF6FF)", borderRadius: "var(--radius-md)" }}>
@@ -916,7 +969,7 @@ export default function Dashboard() {
 
         {/* ── TAB: PROFILE ───────────────────────────────────────────── */}
         {activeNav === "profile" && (
-          <div style={{ background: "#FFFFFF", border: "1px solid var(--border-light)", borderRadius: "var(--radius-md)", padding: 32, maxWidth: 640 }}>
+          <div className="dashboard-tab-panel" style={{ maxWidth: 640 }}>
             <h2 style={{ fontSize: "1.5rem", fontWeight: 800, marginBottom: 6 }}>Learner Profile</h2>
             <p style={{ color: "var(--text-muted)", fontSize: "0.9rem", marginBottom: 24 }}>Your registration details and account settings.</p>
             <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -928,7 +981,7 @@ export default function Dashboard() {
                 <label style={{ fontSize: "0.825rem", fontWeight: 600, color: "var(--text-secondary)", display: "block", marginBottom: 6 }}>Email Address</label>
                 <input type="email" readOnly className="form-field-input" value={email} style={{ background: "#F8FAFC" }} />
               </div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+              <div className="profile-fields-row" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
                 <div>
                   <label style={{ fontSize: "0.825rem", fontWeight: 600, color: "var(--text-secondary)", display: "block", marginBottom: 6 }}>Registration ID</label>
                   <input type="text" readOnly className="form-field-input" value={regCode} style={{ background: "var(--success-bg)", color: "var(--success-text)", fontWeight: 700 }} />
@@ -957,7 +1010,7 @@ export default function Dashboard() {
 
         {/* ── TAB: NOTES & ANNOUNCEMENTS FALLBACK ────────────────────── */}
         {(activeNav === "notes" || activeNav === "announcements") && (
-          <div style={{ background: "#FFFFFF", border: "1px solid var(--border-light)", borderRadius: "var(--radius-md)", padding: 32 }}>
+          <div className="dashboard-tab-panel">
             <h2 style={{ fontSize: "1.5rem", fontWeight: 800, textTransform: "capitalize", marginBottom: 6 }}>{activeNav}</h2>
             <p style={{ color: "var(--text-muted)", fontSize: "0.9rem", marginBottom: 20 }}>Stay updated with course broadcasts and downloadable reference material.</p>
             <div style={{ padding: 18, background: "#F8FAFC", borderRadius: "var(--radius-sm)", border: "1px solid var(--border-light)" }}>
