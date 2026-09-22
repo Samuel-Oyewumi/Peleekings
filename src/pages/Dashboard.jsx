@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
-import { getUserActivity, submitAssignment, getUserEnrollments } from "../contexts/userActivity";
+import { getUserActivity, submitAssignment, getUserEnrollments, enrollInCourse } from "../contexts/userActivity";
 import { COURSES_CATALOG } from "../data/courses";
 
 export default function Dashboard() {
@@ -14,6 +14,10 @@ export default function Dashboard() {
   const [showPathModal, setShowPathModal] = useState(false);
   const [toastMessage, setToastMessage] = useState(location.state?.welcomeToast || "");
   const [showTutorBanner, setShowTutorBanner] = useState(location.state?.showTutorBanner || false);
+  // Browse Courses tab state
+  const [catalogSearch, setCatalogSearch] = useState("");
+  const [catalogFilter, setCatalogFilter] = useState("All");
+  const [enrollingId, setEnrollingId] = useState(null);
 
   // Auto-dismiss welcome toast after 4 seconds
   useEffect(() => {
@@ -255,8 +259,9 @@ export default function Dashboard() {
         {/* Navigation Menu */}
         <nav className="portal-nav-menu">
           {[
-            { id: "dashboard", label: "Dashboard", icon: "📊" },
+                      { id: "dashboard", label: "Dashboard", icon: "📊" },
             { id: "my-courses", label: "My Courses", icon: "📚" },
+            { id: "browse-courses", label: "Browse Courses", icon: "🔍" },
             { id: "assignments", label: "Assignments", icon: "📝" },
             { id: "tests", label: "Tests", icon: "⏱" },
             { id: "notes", label: "Notes", icon: "📄" },
@@ -426,8 +431,8 @@ export default function Dashboard() {
                     <h3 style={{ fontSize: "1.1rem", fontWeight: 700, marginBottom: 4 }}>Ready to start learning?</h3>
                     <p style={{ color: "var(--text-muted)", fontSize: "0.85rem" }}>Enroll in your first course to build practical, monetizable skills.</p>
                   </div>
-                  <button className="btn btn-solid-dark btn-sm" onClick={() => navigate("/")}>
-                    Explore Courses &rarr;
+                  <button className="btn btn-solid-dark btn-sm" onClick={() => setActiveNav("browse-courses")}>
+                    Browse Courses &rarr;
                   </button>
                 </div>
               )}
@@ -475,9 +480,9 @@ export default function Dashboard() {
                   <button
                     className="btn-ghost"
                     style={{ fontSize: "0.85rem", color: "var(--primary-learner)", fontWeight: 600 }}
-                    onClick={() => setActiveNav("my-courses")}
+                    onClick={() => setActiveNav("browse-courses")}
                   >
-                    View all &rarr;
+                    Browse all &rarr;
                   </button>
                 </div>
 
@@ -607,6 +612,137 @@ export default function Dashboard() {
             </div>
           </div>
         )}
+
+        {/* ── TAB: BROWSE COURSES ─────────────────────────────────────── */}
+        {activeNav === "browse-courses" && (() => {
+          const enrolledIds = new Set(liveEnrollments.map(e => e.id));
+          const categories = ["All", ...Array.from(new Set(COURSES_CATALOG.map(c => c.category)))];
+          const filtered = COURSES_CATALOG.filter(c => {
+            const matchCat = catalogFilter === "All" || c.category === catalogFilter;
+            const q = catalogSearch.toLowerCase();
+            const matchQ = !q || c.title.toLowerCase().includes(q) || c.description.toLowerCase().includes(q) || c.badge.toLowerCase().includes(q);
+            return matchCat && matchQ;
+          });
+
+          async function handleEnrollFromDashboard(course) {
+            if (!currentUser?.uid) return;
+            setEnrollingId(course.id);
+            try {
+              await enrollInCourse(currentUser.uid, course.id, "online");
+              // Refresh live enrollments
+              const updated = await getUserEnrollments(currentUser.uid);
+              if (updated && updated.length > 0) {
+                setLiveEnrollments(updated.map(enr => {
+                  const cat = COURSES_CATALOG.find(c => c.id === enr.courseId) || {};
+                  return {
+                    id: enr.courseId,
+                    title: cat.title || enr.courseTitle || enr.courseId,
+                    type: enr.experienceType === "hands-on" ? "Hands-on Practical" : "Online",
+                    progress: enr.progressPercent || 0,
+                    currentModule: `${(enr.completedItemIds || []).length} lessons completed`,
+                    image: cat.image || "https://images.unsplash.com/photo-1677442136019-21780ecad995?w=500&auto=format&fit=crop&q=80",
+                    enrolledAt: enr.enrolledAt?.toDate ? enr.enrolledAt.toDate().toISOString() : new Date().toISOString(),
+                  };
+                }));
+              }
+              triggerToast(`🎉 Enrolled in "${course.title}"! Go to My Courses to start learning.`);
+            } catch (err) {
+              console.error(err);
+              triggerToast("Enrollment failed. Please try again.");
+            } finally {
+              setEnrollingId(null);
+            }
+          }
+
+          return (
+            <div>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 16, marginBottom: 24 }}>
+                <div>
+                  <h2 style={{ fontSize: "1.5rem", fontWeight: 800, marginBottom: 6 }}>Browse All Courses</h2>
+                  <p style={{ color: "var(--text-muted)", fontSize: "0.9rem" }}>Enroll in any course directly from your dashboard.</p>
+                </div>
+                <input
+                  type="text"
+                  placeholder="Search courses…"
+                  value={catalogSearch}
+                  onChange={e => setCatalogSearch(e.target.value)}
+                  className="form-field-input"
+                  style={{ width: 260, marginBottom: 0 }}
+                />
+              </div>
+
+              {/* Category filters */}
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 24 }}>
+                {categories.map(cat => (
+                  <button
+                    key={cat}
+                    onClick={() => setCatalogFilter(cat)}
+                    style={{
+                      padding: "6px 14px",
+                      borderRadius: 999,
+                      fontSize: "0.82rem",
+                      fontWeight: 600,
+                      border: "1px solid var(--border-light)",
+                      cursor: "pointer",
+                      background: catalogFilter === cat ? "var(--primary-learner)" : "#FFFFFF",
+                      color: catalogFilter === cat ? "#FFFFFF" : "var(--text-secondary)",
+                      transition: "all 0.15s",
+                    }}
+                  >
+                    {cat}
+                  </button>
+                ))}
+              </div>
+
+              {/* Course cards grid */}
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(270px, 1fr))", gap: 20 }}>
+                {filtered.map(course => {
+                  const isEnrolled = enrolledIds.has(course.id);
+                  const isEnrolling = enrollingId === course.id;
+                  return (
+                    <div key={course.id} style={{ border: "1px solid var(--border-light)", borderRadius: "var(--radius-md)", overflow: "hidden", background: "#FFFFFF", display: "flex", flexDirection: "column" }}>
+                      <div style={{ height: 140, overflow: "hidden", position: "relative" }}>
+                        <img src={course.image} alt={course.title} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                        <span className={`pill-badge ${course.badgeClass || "pill-tech"}`} style={{ position: "absolute", top: 10, left: 10, fontSize: "0.7rem" }}>
+                          {course.badge}
+                        </span>
+                      </div>
+                      <div style={{ padding: 16, flex: 1, display: "flex", flexDirection: "column" }}>
+                        <h3 style={{ fontSize: "0.975rem", fontWeight: 700, marginBottom: 6, lineHeight: 1.35 }}>{course.title}</h3>
+                        <p style={{ fontSize: "0.8rem", color: "var(--text-muted)", lineHeight: 1.5, flex: 1, marginBottom: 14 }}>
+                          {course.description?.slice(0, 90)}{course.description?.length > 90 ? "…" : ""}
+                        </p>
+                        <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.75rem", color: "var(--text-muted)", marginBottom: 14 }}>
+                          <span>⏱ {course.duration}</span>
+                          <span>📦 {course.modulesCount} modules</span>
+                          <span>⭐ {course.rating}</span>
+                        </div>
+                        {isEnrolled ? (
+                          <button
+                            className="btn btn-outline btn-sm"
+                            style={{ width: "100%" }}
+                            onClick={() => navigate(`/course/${course.id}`, { state: { classroom: true } })}
+                          >
+                            ✓ Continue Learning →
+                          </button>
+                        ) : (
+                          <button
+                            className="btn btn-solid-dark btn-sm"
+                            style={{ width: "100%" }}
+                            disabled={isEnrolling}
+                            onClick={() => handleEnrollFromDashboard(course)}
+                          >
+                            {isEnrolling ? "Enrolling…" : "Enroll Now →"}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })()}
 
         {/* ── TAB: ASSIGNMENTS ───────────────────────────────────────── */}
         {activeNav === "assignments" && (
