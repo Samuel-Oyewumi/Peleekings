@@ -12,6 +12,7 @@ import {
   getAssignmentSubmission,
   submitTest,
   getTestSubmission,
+  incrementDailyActivity,
 } from "../contexts/userActivity";
 import { getResources, uploadResource } from "../contexts/resourcesService";
 
@@ -211,6 +212,21 @@ export default function CoursePage() {
       setViewMode("classroom");
     }
   }, [location.state?.classroom, isEnrolled]);
+
+  // Track active study time while in classroom mode — 1 minute increments to Firestore
+  useEffect(() => {
+    if (!currentUser?.uid || !isEnrolled) return;
+    // Immediately record 1 minute when entering classroom
+    incrementDailyActivity(currentUser.uid, 1);
+    // Then continue tracking every 60 seconds
+    const timer = setInterval(() => {
+      if (viewMode === "classroom") {
+        incrementDailyActivity(currentUser.uid, 1);
+      }
+    }, 60000);
+    return () => clearInterval(timer);
+  }, [currentUser?.uid, isEnrolled, viewMode]);
+
 
   // Fetch submissions when active lesson changes — dynamic by lesson type
   useEffect(() => {

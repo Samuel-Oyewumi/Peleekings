@@ -10,29 +10,31 @@ export default function ProtectedRoute({ children, adminOnly = false }) {
     return (
       <div
         style={{
-          minHeight: "70vh",
+          minHeight: "100vh",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
           flexDirection: "column",
-          gap: 16,
+          gap: 14,
           color: "var(--text-muted)",
           fontFamily: "var(--font-sans)",
+          background: "var(--bg-main)",
         }}
       >
         <div
           style={{
-            width: 38,
-            height: 38,
-            border: "3px solid rgba(0, 0, 0, 0.1)",
-            borderTopColor: "var(--primary-accent, #4F46E5)",
+            width: 34,
+            height: 34,
+            border: "3px solid rgba(86, 36, 208, 0.15)",
+            borderTopColor: "var(--primary-learner)",
             borderRadius: "50%",
-            animation: "spin 0.8s linear infinite",
+            animation: "spin 0.7s linear infinite",
           }}
         />
-        <p style={{ fontSize: "0.9rem", fontWeight: 500 }}>
-          Verifying security credentials...
+        <p style={{ fontSize: "0.875rem", fontWeight: 500 }}>
+          Loading...
         </p>
+        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
       </div>
     );
   }

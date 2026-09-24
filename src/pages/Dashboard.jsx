@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
-import { getUserActivity, submitAssignment, getUserEnrollments, enrollInCourse } from "../contexts/userActivity";
+import { getUserActivity, submitAssignment, getUserEnrollments, enrollInCourse, getWeeklyActivityData, incrementDailyActivity } from "../contexts/userActivity";
 import { COURSES_CATALOG } from "../data/courses";
 
 export default function Dashboard() {
@@ -46,6 +46,26 @@ export default function Dashboard() {
 
   const [userActivity, setUserActivity] = useState(() => getUserActivity(currentUser?.uid));
   const [liveEnrollments, setLiveEnrollments] = useState([]);
+  const [weeklyActivityLive, setWeeklyActivityLive] = useState(null);
+
+  // Load live weekly activity from Firestore
+  useEffect(() => {
+    if (!currentUser?.uid) return;
+    getWeeklyActivityData(currentUser.uid).then((data) => {
+      if (data) setWeeklyActivityLive(data);
+    });
+
+    // Track active time: increment every 60 seconds while Dashboard is open
+    const activityInterval = setInterval(() => {
+      incrementDailyActivity(currentUser.uid, 1);
+      // Refresh the chart every 5 minutes (every 5 ticks)
+      getWeeklyActivityData(currentUser.uid).then((data) => {
+        if (data) setWeeklyActivityLive(data);
+      });
+    }, 60000);
+
+    return () => clearInterval(activityInterval);
+  }, [currentUser?.uid]);
 
   useEffect(() => {
     setUserActivity(getUserActivity(currentUser?.uid));
@@ -86,15 +106,25 @@ export default function Dashboard() {
   // Active courses enrolled: prioritize live Firestore enrollments, fall back to cached
   const enrolledCourses = liveEnrollments.length > 0 ? liveEnrollments : (userActivity?.enrolledCourses || []);
 
-  const weeklyActivityData = userActivity?.weeklyActivity || [
-    { day: "Mon", hours: 45, label: "45m" },
-    { day: "Tue", hours: 60, label: "1h" },
-    { day: "Wed", hours: 30, label: "30m" },
-    { day: "Thu", hours: 85, label: "1h 25m", highlight: true },
-    { day: "Fri", hours: 40, label: "40m" },
-    { day: "Sat", hours: 90, label: "1h 30m" },
-    { day: "Sun", hours: 20, label: "20m" },
+  const weeklyActivityData = weeklyActivityLive || userActivity?.weeklyActivity || [
+    { day: "Mon", hours: 4, label: "0m" },
+    { day: "Tue", hours: 4, label: "0m" },
+    { day: "Wed", hours: 4, label: "0m" },
+    { day: "Thu", hours: 4, label: "0m" },
+    { day: "Fri", hours: 4, label: "0m" },
+    { day: "Sat", hours: 4, label: "0m" },
+    { day: "Sun", hours: 4, label: "0m" },
   ];
+
+  // Compute total minutes from live data
+  const totalWeeklyMinutes = weeklyActivityLive
+    ? weeklyActivityLive.reduce((sum, d) => sum + (d.minutes || 0), 0)
+    : null;
+  const totalWeeklyLabel = totalWeeklyMinutes != null
+    ? (totalWeeklyMinutes === 0 ? "0m this week"
+      : totalWeeklyMinutes < 60 ? `${totalWeeklyMinutes}m this week`
+      : `${Math.floor(totalWeeklyMinutes / 60)}h ${totalWeeklyMinutes % 60 > 0 ? totalWeeklyMinutes % 60 + "m" : ""}`.trim() + " this week")
+    : "4h 32m";
 
   const DEFAULT_ASSIGNMENTS = [
     {
@@ -498,12 +528,17 @@ export default function Dashboard() {
                       Weekly Learning Activity
                     </div>
                     <div style={{ fontSize: "1.75rem", fontWeight: 800, marginTop: 4, color: "var(--text-primary)" }}>
-                      4h 32m
+                      {totalWeeklyLabel}
                     </div>
+                    {weeklyActivityLive && (
+                      <div style={{ fontSize: "0.7rem", color: "var(--text-muted)", marginTop: 2 }}>Live from Firestore</div>
+                    )}
                   </div>
-                  <span className="pill-badge pill-success" style={{ fontSize: "0.75rem" }}>
-                    +30%
-                  </span>
+                  {weeklyActivityLive && totalWeeklyMinutes > 0 ? (
+                    <span className="pill-badge pill-success" style={{ fontSize: "0.75rem" }}>Active</span>
+                  ) : (
+                    <span className="pill-badge" style={{ fontSize: "0.75rem", background: "#F1F5F9", color: "var(--text-muted)" }}>This Week</span>
+                  )}
                 </div>
 
                 {/* Micro bar chart */}
@@ -525,7 +560,7 @@ export default function Dashboard() {
             </div>
 
             {/* Middle Row: My Courses & Upcoming Events */}
-            <div style={{ display: "grid", gridTemplateColumns: "1.4fr 0.6fr", gap: 24, marginBottom: 32 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 320px), 1fr))", gap: 24, marginBottom: 32 }}>
               {/* My Courses Section */}
               <div style={{ background: "#FFFFFF", border: "1px solid var(--border-light)", borderRadius: "var(--radius-md)", padding: 24 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>

@@ -76,6 +76,20 @@ service cloud.firestore {
         allow update: if isSignedIn() && resource.data.uid == request.auth.uid;
         allow delete: if isAdmin() || (isSignedIn() && resource.data.uid == request.auth.uid);
       }
+      // ── Course Content Subcollections (notes, assignments, tests, announcements) ─
+      // Signed-in enrolled users can read; tutors/admins can create, update, delete
+      match /notes/{noteId} {
+        allow read: if isSignedIn();
+        allow create, update, delete: if isAdmin() || isTutor();
+      }
+      match /assignments/{assignmentId} {
+        allow read: if isSignedIn();
+        allow create, update, delete: if isAdmin() || isTutor();
+      }
+      match /tests/{testId} {
+        allow read: if isSignedIn();
+        allow create, update, delete: if isAdmin() || isTutor();
+      }
     }
 
     // ── 3. Enrollments Collection ─────────────────────────────────
@@ -169,8 +183,16 @@ service cloud.firestore {
     // Cloud Functions (Admin SDK) bypass these rules entirely.
     match /users/{uid}/notifications/{notifId} {
       allow read, update: if isOwner(uid);
-      allow create: if isAdmin() || isTutor();
+      allow create: if isSignedIn(); // tutors/admins notify enrolled students
       allow delete: if isOwner(uid) || isAdmin();
+    }
+
+    // ── 7b. User Daily Activity Subcollection ─────────────────────
+    // Each user can read and write only their own daily activity records.
+    // Stored at users/{uid}/dailyActivity/{YYYY-MM-DD}
+    match /users/{uid}/dailyActivity/{dayId} {
+      allow read, write: if isOwner(uid);
+      allow read: if isAdmin();
     }
 
     // ── 7. Resources Collection & Course Resources ─────────────────

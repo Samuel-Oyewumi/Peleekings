@@ -19,6 +19,88 @@ import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { db, storage } from "../firebase";
 import { COURSES_CATALOG } from "../data/courses";
 
+// ── Daily Activity Tracking ────────────────────────────────────────────────
+
+/**
+ * Increment a user's daily activity minutes for today.
+ * Stored at: users/{uid}/dailyActivity/{YYYY-MM-DD}
+ * Call this periodically (e.g. every 1 minute) while user is active on a course page.
+ */
+export async function incrementDailyActivity(uid, minutesToAdd = 1) {
+  if (!uid) return;
+  const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+  const dayRef = doc(db, "users", uid, "dailyActivity", today);
+  try {
+    const snap = await getDoc(dayRef);
+    if (snap.exists()) {
+      await updateDoc(dayRef, {
+        minutes: (snap.data().minutes || 0) + minutesToAdd,
+        updatedAt: serverTimestamp(),
+      });
+    } else {
+      await setDoc(dayRef, {
+        date: today,
+        minutes: minutesToAdd,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+    }
+  } catch (err) {
+    console.warn("Notice: could not update daily activity:", err);
+  }
+}
+
+/**
+ * Get the last 7 days of learning activity for a user from Firestore.
+ * Returns an array of {day, minutes, label, highlight, hours} objects for the chart.
+ */
+export async function getWeeklyActivityData(uid) {
+  if (!uid) return null;
+
+  const days = [];
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(today);
+    d.setDate(today.getDate() - i);
+    const dateStr = d.toISOString().slice(0, 10);
+    const dayLabel = d.toLocaleDateString("en-US", { weekday: "short" });
+    days.push({ dateStr, dayLabel, minutes: 0 });
+  }
+
+  try {
+    const fetchPromises = days.map((d) =>
+      getDoc(doc(db, "users", uid, "dailyActivity", d.dateStr))
+    );
+    const snaps = await Promise.all(fetchPromises);
+    snaps.forEach((snap, i) => {
+      if (snap.exists()) {
+        days[i].minutes = snap.data().minutes || 0;
+      }
+    });
+  } catch (err) {
+    console.warn("Notice: could not fetch weekly activity:", err);
+    return null;
+  }
+
+  const maxMinutes = Math.max(...days.map((d) => d.minutes), 1);
+  const maxIdx = days.reduce((best, d, i) => (d.minutes > days[best].minutes ? i : best), 0);
+
+  return days.map((d, i) => {
+    const h = Math.floor(d.minutes / 60);
+    const m = d.minutes % 60;
+    const label = d.minutes === 0 ? "0m" : h > 0 ? `${h}h${m > 0 ? " " + m + "m" : ""}` : `${m}m`;
+    return {
+      day: d.dayLabel,
+      hours: Math.max(4, Math.round((d.minutes / Math.max(maxMinutes, 1)) * 100)),
+      minutes: d.minutes,
+      label,
+      highlight: i === maxIdx && d.minutes > 0,
+    };
+  });
+}
+
 /**
  * Enroll a user in a course.
  * Writes to enrollments/{uid}_{courseId} via setDoc with merge: true.
