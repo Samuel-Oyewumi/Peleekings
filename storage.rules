@@ -23,9 +23,9 @@ service firebase.storage {
              request.resource.contentType == 'application/pdf';
     }
 
-    // ── 1. User Portraits: users/{uid}/portrait ───────────────────
+    // ── 1. User Portraits: users/{uid}/portrait/{allPaths=**} ────
     // A user may only upload to their own users/{uid}/portrait path
-    match /users/{uid}/portrait {
+    match /users/{uid}/portrait/{allPaths=**} {
       // Any signed-in user can view user avatars/portraits
       allow read: if isSignedIn();
 

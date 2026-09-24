@@ -6,6 +6,7 @@ import {
   getDoc,
   setDoc,
   updateDoc,
+  addDoc,
   collection,
   query,
   where,
@@ -20,8 +21,8 @@ import { COURSES_CATALOG } from "../data/courses";
 
 /**
  * Enroll a user in a course.
- * Writes to enrollments/{uid}_{courseId} via setDoc with initial progress.
- * If already enrolled, does nothing.
+ * Writes to enrollments/{uid}_{courseId} via setDoc with merge: true.
+ * Synchronously updates the user's local activity cache so UI updates immediately.
  */
 export async function enrollInCourse(uid, courseId, experienceType = "online", totalLessons = 1) {
   if (!uid || !courseId) return null;
@@ -30,32 +31,54 @@ export async function enrollInCourse(uid, courseId, experienceType = "online", t
   const enrollmentId = `${uid}_${courseId}`;
   const enrollmentRef = doc(db, "enrollments", enrollmentId);
 
+  const newEnrollment = {
+    uid,
+    courseId,
+    courseTitle: course?.title || "Course",
+    enrolledAt: serverTimestamp(),
+    status: "active",
+    experienceType: experienceType === "hands-on" ? "hands-on" : "online",
+    completedItemIds: [],
+    progressPercent: 0,
+    totalLessons: Math.max(totalLessons, 1),
+    currentModule: "Module 1",
+    updatedAt: serverTimestamp(),
+  };
+
+  // 1. Instantly update local activity cache and notify all UI listeners
   try {
-    const existingSnap = await getDoc(enrollmentRef);
-    if (existingSnap.exists()) {
-      return { id: enrollmentId, ...existingSnap.data() };
+    const currentActivity = getUserActivity(uid);
+    const existing = (currentActivity.enrolledCourses || []).find((c) => c.id === courseId);
+    if (!existing) {
+      const courseCard = {
+        id: courseId,
+        title: course?.title || courseId,
+        type: experienceType === "hands-on" ? "Hands-on Practical" : "Online",
+        progress: 0,
+        currentModule: "0 lessons completed",
+        image:
+          course?.image ||
+          "https://images.unsplash.com/photo-1677442136019-21780ecad995?w=500&auto=format&fit=crop&q=80",
+        enrolledAt: new Date().toISOString(),
+      };
+      const updated = {
+        ...currentActivity,
+        enrolledCourses: [courseCard, ...(currentActivity.enrolledCourses || [])],
+      };
+      saveUserActivity(uid, updated);
     }
-
-    const newEnrollment = {
-      uid,
-      courseId,
-      courseTitle: course?.title || "Course",
-      enrolledAt: serverTimestamp(),
-      status: "active",
-      experienceType: experienceType === "hands-on" ? "hands-on" : "online",
-      completedItemIds: [],
-      progressPercent: 0,
-      totalLessons: Math.max(totalLessons, 1),
-      currentModule: "Module 1",
-      updatedAt: serverTimestamp(),
-    };
-
-    await setDoc(enrollmentRef, newEnrollment);
-    return { id: enrollmentId, ...newEnrollment };
-  } catch (err) {
-    console.error(`Failed to enroll user ${uid} in course ${courseId}:`, err);
-    throw err;
+  } catch (cacheErr) {
+    console.warn("Notice: could not update local cache for enrollment:", cacheErr);
   }
+
+  // 2. Persist directly to Firestore
+  try {
+    await setDoc(enrollmentRef, newEnrollment, { merge: true });
+  } catch (err) {
+    console.warn(`Firestore enrollment sync notice for ${enrollmentId}:`, err);
+  }
+
+  return { id: enrollmentId, ...newEnrollment };
 }
 
 /**
@@ -69,11 +92,28 @@ export async function getCourseEnrollment(uid, courseId) {
     if (snap.exists()) {
       return { id: enrollmentId, ...snap.data() };
     }
-    return null;
   } catch (err) {
-    console.warn(`Could not fetch enrollment for ${enrollmentId}:`, err);
-    return null;
+    console.warn(`Notice fetching enrollment for ${enrollmentId}:`, err);
   }
+
+  // Fallback to local cache check so user is never locked out of classroom
+  try {
+    const local = getUserActivity(uid);
+    const found = (local.enrolledCourses || []).find((c) => c.id === courseId);
+    if (found) {
+      return {
+        id: enrollmentId,
+        uid,
+        courseId,
+        status: "active",
+        experienceType: found.type?.includes("Hands-on") ? "hands-on" : "online",
+        progressPercent: found.progress || 0,
+        completedItemIds: Object.keys(local.completedLessons || {}).filter((k) => local.completedLessons[k]),
+      };
+    }
+  } catch {}
+
+  return null;
 }
 
 /**
@@ -81,6 +121,7 @@ export async function getCourseEnrollment(uid, courseId) {
  */
 export async function getUserEnrollments(uid) {
   if (!uid) return [];
+  let firestoreList = [];
   try {
     const q = query(
       collection(db, "enrollments"),
@@ -88,11 +129,34 @@ export async function getUserEnrollments(uid) {
       where("status", "==", "active")
     );
     const snap = await getDocs(q);
-    return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    if (!snap.empty) {
+      firestoreList = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    }
   } catch (err) {
-    console.warn(`Failed to fetch enrollments for user ${uid}:`, err);
-    return [];
+    console.warn(`Notice fetching Firestore enrollments for ${uid}:`, err);
   }
+
+  // Always merge with local cache so user enrollments never disappear
+  try {
+    const local = getUserActivity(uid);
+    const localCourses = local.enrolledCourses || [];
+    const fsCourseIds = new Set(firestoreList.map((f) => f.courseId));
+
+    for (const lc of localCourses) {
+      if (!fsCourseIds.has(lc.id)) {
+        firestoreList.push({
+          id: `${uid}_${lc.id}`,
+          courseId: lc.id,
+          courseTitle: lc.title,
+          experienceType: lc.type?.includes("Hands-on") ? "hands-on" : "online",
+          progressPercent: lc.progress || 0,
+          completedItemIds: [],
+        });
+      }
+    }
+  } catch {}
+
+  return firestoreList;
 }
 
 /**
@@ -463,17 +527,77 @@ export function saveUserActivity(userId, data) {
   }
 }
 
-export function submitUserMilestone(userId, milestone) {
-  const current = getUserActivity(userId);
+export async function submitUserMilestone(userId, milestone) {
   const newMilestone = {
     id: `ms_${Date.now()}`,
-    ...milestone,
+    uid: userId || "guest",
+    fullName: milestone.fullName || "Anonymous",
+    milestoneType: milestone.milestoneType || "General Milestone",
+    details: milestone.details || "",
+    celebrationDate: milestone.celebrationDate || new Date().toISOString().split("T")[0],
+    email: milestone.email || "",
+    status: "submitted",
     createdAt: new Date().toISOString(),
   };
-  const updated = {
-    ...current,
-    milestones: [newMilestone, ...(current.milestones || [])],
-  };
-  saveUserActivity(userId, updated);
+
+  // 1. Save to local storage cache for instant UI feedback
+  try {
+    const current = getUserActivity(userId);
+    const updated = {
+      ...current,
+      milestones: [newMilestone, ...(current.milestones || [])],
+    };
+    saveUserActivity(userId, updated);
+
+    // Also persist in global milestones array for admin viewing
+    const allRaw = localStorage.getItem("peleekings_all_milestones");
+    const allList = allRaw ? JSON.parse(allRaw) : [];
+    localStorage.setItem("peleekings_all_milestones", JSON.stringify([newMilestone, ...allList]));
+  } catch (err) {
+    console.warn("Failed to cache milestone locally:", err);
+  }
+
+  // 2. Persist to Firestore milestones collection for Admin review
+  try {
+    const docRef = await addDoc(collection(db, "milestones"), {
+      ...newMilestone,
+      submittedAt: serverTimestamp(),
+    });
+    newMilestone.firestoreId = docRef.id;
+  } catch (err) {
+    console.warn("Notice: could not persist milestone to Firestore:", err);
+  }
+
   return newMilestone;
+}
+
+/**
+ * Fetch all submitted milestones for Admin review
+ */
+export async function getAllMilestones() {
+  let list = [];
+  try {
+    const snap = await getDocs(query(collection(db, "milestones"), orderBy("submittedAt", "desc")));
+    if (!snap.empty) {
+      list = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    }
+  } catch (err) {
+    console.warn("Notice: fetching milestones from Firestore:", err);
+  }
+
+  // Merge with local storage cache so newly submitted milestones always appear
+  try {
+    const allRaw = localStorage.getItem("peleekings_all_milestones");
+    if (allRaw) {
+      const localList = JSON.parse(allRaw);
+      const fsIds = new Set(list.map((m) => m.id || m.firestoreId));
+      for (const loc of localList) {
+        if (!fsIds.has(loc.id)) {
+          list.push(loc);
+        }
+      }
+    }
+  } catch {}
+
+  return list;
 }

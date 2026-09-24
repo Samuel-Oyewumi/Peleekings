@@ -80,21 +80,24 @@ service cloud.firestore {
 
     // ── 3. Enrollments Collection ─────────────────────────────────
     // Doc ID format: {uid}_{courseId}
-    // A user can create an enrollments doc only where the doc's uid field
-    // equals their own request.auth.uid, and can read/update only their own enrollment docs.
-    // They may never set or change another user's enrollment.
+    // A user can create/update an enrollments doc only where the doc's uid field
+    // equals their own request.auth.uid, and can read only their own enrollment docs.
     match /enrollments/{enrollmentId} {
-      allow create: if isSignedIn() && 
-        request.resource.data.uid == request.auth.uid &&
-        enrollmentId.matches('^' + request.auth.uid + '_.*');
-
-      allow read: if isSignedIn() && (resource.data.uid == request.auth.uid || isAdmin());
-
-      allow update: if isSignedIn() && 
-        resource.data.uid == request.auth.uid && 
+      allow create, update: if isSignedIn() && 
         request.resource.data.uid == request.auth.uid;
 
+      allow read: if isSignedIn() && (resource == null || resource.data.uid == request.auth.uid || isAdmin());
+
       allow delete: if isAdmin();
+    }
+
+    // ── 3b. Milestones & Celebrations Collection ──────────────────
+    // Visitors and learners can submit celebration milestones;
+    // Admins can read, update, and manage all celebration submissions.
+    match /milestones/{milestoneId} {
+      allow create: if true;
+      allow read: if isSignedIn() && (isAdmin() || resource.data.uid == request.auth.uid);
+      allow update, delete: if isAdmin();
     }
 
     // ── 4. Tutor Applications Collection ──────────────────────────

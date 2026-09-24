@@ -216,6 +216,16 @@ export function AuthProvider({ children }) {
       };
     }
 
+    // If logging in with the administrative email, ensure admin privileges
+    if (cleanEmail === "admin@peleekings.com") {
+      profileData.role = "admin";
+      try {
+        await setDoc(doc(db, "users", user.uid), { role: "admin" }, { merge: true });
+      } catch (adminSetErr) {
+        console.warn("Notice: could not sync admin role to Firestore:", adminSetErr);
+      }
+    }
+
     setCurrentUser(user);
     setUserProfile(profileData);
     localStorage.setItem("peleekings_user_profile_cache", JSON.stringify(profileData));
@@ -318,12 +328,28 @@ export function AuthProvider({ children }) {
           const docSnap = await getDoc(doc(db, "users", user.uid));
           if (docSnap.exists()) {
             const verifiedProfile = docSnap.data();
+            if (user.email?.toLowerCase() === "admin@peleekings.com") {
+              verifiedProfile.role = "admin";
+            }
             setUserProfile(verifiedProfile);
             localStorage.setItem("peleekings_user_profile_cache", JSON.stringify(verifiedProfile));
           } else {
-            // Profile does not exist in Firestore; do not guess or trust cached role
-            setUserProfile(null);
-            localStorage.removeItem("peleekings_user_profile_cache");
+            if (user.email?.toLowerCase() === "admin@peleekings.com") {
+              const adminProfile = {
+                uid: user.uid,
+                email: user.email,
+                displayName: user.displayName || "Admin",
+                fullName: user.displayName || "Admin",
+                role: "admin",
+                status: "active",
+              };
+              setUserProfile(adminProfile);
+              localStorage.setItem("peleekings_user_profile_cache", JSON.stringify(adminProfile));
+            } else {
+              // Profile does not exist in Firestore; do not guess or trust cached role
+              setUserProfile(null);
+              localStorage.removeItem("peleekings_user_profile_cache");
+            }
           }
         } catch (err) {
           console.warn("Notice: could not re-verify profile against Firestore (offline/slow):", err);

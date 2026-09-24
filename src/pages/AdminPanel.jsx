@@ -19,13 +19,32 @@ import { httpsCallable } from "firebase/functions";
 import { db, functions } from "../firebase";
 import { COURSES_CATALOG } from "../data/courses";
 import { getResources, uploadResource, deleteResource } from "../contexts/resourcesService";
+import { getAllMilestones } from "../contexts/userActivity";
 
 export default function AdminPanel() {
   const { userProfile } = useAuth();
   const navigate = useNavigate();
 
-  // Navigation tabs: "applications", "analytics", "registrations", "courses", "resources", "certificates"
+  // Navigation tabs: "applications", "analytics", "registrations", "courses", "resources", "celebrations", "certificates"
   const [activeTab, setActiveTab] = useState("applications");
+
+  // ── Live State: Celebrations & Milestones ──────────────────────
+  const [milestones, setMilestones] = useState([]);
+  const [loadingMilestones, setLoadingMilestones] = useState(true);
+  const [milestoneFilter, setMilestoneFilter] = useState("all");
+  const [selectedMilestoneModal, setSelectedMilestoneModal] = useState(null);
+
+  async function fetchMilestones() {
+    setLoadingMilestones(true);
+    try {
+      const data = await getAllMilestones();
+      setMilestones(data || []);
+    } catch (err) {
+      console.warn("Notice: could not load milestones:", err);
+    } finally {
+      setLoadingMilestones(false);
+    }
+  }
 
   // ── Live State: Resources & Uploads ───────────────────────────
   const [adminResources, setAdminResources] = useState([]);
@@ -141,9 +160,28 @@ export default function AdminPanel() {
           ...data,
         };
       });
+      // Merge local storage pending submissions so tutor applications are never lost
+      try {
+        const localAppsRaw = localStorage.getItem("peleekings_pending_tutor_applications");
+        if (localAppsRaw) {
+          const localApps = JSON.parse(localAppsRaw);
+          const existingIds = new Set(list.map(a => a.id));
+          for (const localApp of localApps) {
+            if (!existingIds.has(localApp.id)) {
+              list.unshift(localApp);
+            }
+          }
+        }
+      } catch {}
       setApplications(list);
     } catch (err) {
       console.error("Failed to load tutor applications from Firestore:", err);
+      try {
+        const localAppsRaw = localStorage.getItem("peleekings_pending_tutor_applications");
+        if (localAppsRaw) {
+          setApplications(JSON.parse(localAppsRaw));
+        }
+      } catch {}
     } finally {
       setLoadingApps(false);
     }
@@ -293,6 +331,7 @@ export default function AdminPanel() {
     fetchUsers();
     fetchCourses();
     fetchAuditLogs();
+    fetchMilestones();
   }, []);
 
   // ── 5. State: Certificates ────────────────────────────────────
@@ -660,12 +699,13 @@ export default function AdminPanel() {
           </div>
         </div>
 
-        {/* ── 4 Overview Metrics Cards ────────────────────────────────── */}
+        {/* ── Overview Metrics Cards ────────────────────────────────── */}
         <div className="stats-cards-deck">
           {[
             { label: "Registered Users", value: `${usersList.length}`, change: "Live", color: "pill-tech" },
             { label: "Active Courses", value: `${adminCourses.length}`, change: "Live", color: "pill-success" },
             { label: "Pending Tutors", value: `${applications.filter(a => a.status === "pending").length}`, change: "Live", color: "pill-creative" },
+            { label: "Celebrations & Milestones", value: `${milestones.length}`, change: "Live", color: "pill-success" },
             { label: "Audit Events", value: `${auditLogs.length}`, change: "Live", color: "pill-tech" },
           ].map(m => (
             <div key={m.label} className="stat-metric-card">
@@ -695,6 +735,7 @@ export default function AdminPanel() {
             { id: "registrations", label: "User Registrations", count: usersList.length },
             { id: "courses", label: "Course Management", count: adminCourses.length },
             { id: "resources", label: "Resources & Uploads", count: adminResources.length },
+            { id: "celebrations", label: "Milestones & Celebrations", count: milestones.length },
             { id: "certificates", label: "Certificates & Verification", count: null },
           ].map(t => (
             <button
@@ -1314,6 +1355,176 @@ export default function AdminPanel() {
                     </div>
                   </div>
                 ))}
+            </div>
+          </div>
+        )}
+
+        {/* ── TAB: CELEBRATIONS & MILESTONES ──────────────────────────── */}
+        {activeTab === "celebrations" && (
+          <div>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20, flexWrap: "wrap", gap: 14 }}>
+              <div>
+                <h2 style={{ fontSize: "1.3rem", fontWeight: 800 }}>Celebrations &amp; Community Milestones 🎉</h2>
+                <p style={{ fontSize: "0.85rem", color: "var(--text-muted)" }}>
+                  Celebration stories and milestones submitted via the About page modal and Learner Portal. Review learner breakthroughs and community impact.
+                </p>
+              </div>
+              <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                  {["all", "Course Completion", "Career Breakthrough", "Community Project", "Tech Innovation"].map((f) => (
+                    <button
+                      key={f}
+                      className={`filter-pill-btn ${milestoneFilter === f ? "active" : ""}`}
+                      onClick={() => setMilestoneFilter(f)}
+                    >
+                      {f === "all" ? "All Categories" : f}
+                    </button>
+                  ))}
+                </div>
+                <button
+                  className="btn btn-outline btn-sm"
+                  onClick={fetchMilestones}
+                >
+                  ↻ Refresh
+                </button>
+              </div>
+            </div>
+
+            <div className="data-table-container">
+              {loadingMilestones ? (
+                <div style={{ padding: "36px 20px", textAlign: "center", color: "var(--text-muted)" }}>
+                  Loading celebration milestones...
+                </div>
+              ) : milestones.length === 0 ? (
+                <div style={{ padding: "40px 20px", textAlign: "center", color: "var(--text-muted)", fontSize: "0.9rem" }}>
+                  No milestone submissions recorded yet. Submissions from "Celebrate a Milestone with Us" on the About page will appear here.
+                </div>
+              ) : (
+                <table className="clean-data-table">
+                  <thead>
+                    <tr>
+                      <th>Participant</th>
+                      <th>Category</th>
+                      <th>Celebration Date</th>
+                      <th>Milestone Story</th>
+                      <th>Status</th>
+                      <th style={{ textAlign: "right" }}>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {milestones
+                      .filter((m) => {
+                        if (milestoneFilter === "all") return true;
+                        return m.category === milestoneFilter;
+                      })
+                      .map((m) => (
+                        <tr key={m.id || m.firestoreId || Math.random()}>
+                          <td>
+                            <div style={{ fontWeight: 700, color: "var(--text-primary)" }}>{m.fullName || m.name || "Learner"}</div>
+                            <div style={{ fontSize: "0.78rem", color: "var(--text-muted)" }}>{m.email || "No email provided"}</div>
+                          </td>
+                          <td>
+                            <span className="pill-badge pill-tech">
+                              {m.category || "General"}
+                            </span>
+                          </td>
+                          <td style={{ fontSize: "0.85rem", color: "var(--text-secondary)" }}>
+                            {m.celebrationDate || (m.createdAt ? new Date(m.createdAt).toLocaleDateString() : "Recent")}
+                          </td>
+                          <td style={{ maxWidth: 320 }}>
+                            <p style={{
+                              fontSize: "0.85rem",
+                              color: "var(--text-secondary)",
+                              margin: 0,
+                              whiteSpace: "nowrap",
+                              overflow: "hidden",
+                              textOverflow: "ellipsis"
+                            }}>
+                              {m.story || "No story provided."}
+                            </p>
+                          </td>
+                          <td>
+                            <span className={`pill-badge ${m.approved ? "pill-success" : "pill-creative"}`}>
+                              {m.approved ? "Approved" : "Under Review"}
+                            </span>
+                          </td>
+                          <td style={{ textAlign: "right" }}>
+                            <button
+                              className="btn btn-outline btn-sm"
+                              onClick={() => setSelectedMilestoneModal(m)}
+                            >
+                              Read Story &rarr;
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ── CELEBRATION STORY DETAIL MODAL ──────────────────────────── */}
+        {selectedMilestoneModal && (
+          <div className="modal-backdrop-overlay" onClick={() => setSelectedMilestoneModal(null)}>
+            <div className="modal-dialog-box" style={{ maxWidth: 620 }} onClick={(e) => e.stopPropagation()}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
+                <div>
+                  <span className="pill-badge pill-success" style={{ marginBottom: 4 }}>🎉 CELEBRATION MILESTONE</span>
+                  <h3 style={{ fontSize: "1.4rem", fontWeight: 800 }}>{selectedMilestoneModal.fullName || "Community Milestone"}</h3>
+                </div>
+                <button className="btn-ghost" onClick={() => setSelectedMilestoneModal(null)}>✕</button>
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 18 }}>
+                <div>
+                  <div style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>Category</div>
+                  <div style={{ fontWeight: 700, fontSize: "0.95rem" }}>{selectedMilestoneModal.category || "Milestone"}</div>
+                </div>
+                <div>
+                  <div style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>Celebration Date</div>
+                  <div style={{ fontWeight: 700, fontSize: "0.95rem" }}>{selectedMilestoneModal.celebrationDate || "Recent"}</div>
+                </div>
+                <div>
+                  <div style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>Email</div>
+                  <div style={{ fontSize: "0.875rem", color: "var(--text-secondary)" }}>{selectedMilestoneModal.email || "N/A"}</div>
+                </div>
+                <div>
+                  <div style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>Submitted At</div>
+                  <div style={{ fontSize: "0.875rem", color: "var(--text-secondary)" }}>
+                    {selectedMilestoneModal.createdAt ? new Date(selectedMilestoneModal.createdAt).toLocaleDateString() : "Recent"}
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ marginBottom: 20 }}>
+                <div style={{ fontSize: "0.8rem", fontWeight: 700, color: "var(--text-primary)", marginBottom: 6 }}>
+                  Milestone Story &amp; Details:
+                </div>
+                <div style={{
+                  background: "#F8FAFC",
+                  border: "1px solid #E2E8F0",
+                  padding: 16,
+                  borderRadius: 8,
+                  fontSize: "0.9rem",
+                  lineHeight: 1.6,
+                  color: "var(--text-secondary)",
+                  whiteSpace: "pre-wrap"
+                }}>
+                  {selectedMilestoneModal.story}
+                </div>
+              </div>
+
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
+                <button
+                  type="button"
+                  className="btn btn-outline btn-sm"
+                  onClick={() => setSelectedMilestoneModal(null)}
+                >
+                  Close
+                </button>
+              </div>
             </div>
           </div>
         )}

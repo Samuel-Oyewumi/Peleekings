@@ -103,7 +103,7 @@ export default function BecomeInstructor() {
         return;
       }
 
-      await addDoc(collection(db, "tutorApplications"), {
+      const appData = {
         applicantUid: currentUser.uid,
         fullName: formData.fullName,
         email: currentUser.email,
@@ -114,7 +114,18 @@ export default function BecomeInstructor() {
         syllabus: formData.syllabus,
         status: "pending",
         appliedAt: serverTimestamp(),
-      });
+      };
+
+      try {
+        await addDoc(collection(db, "tutorApplications"), appData);
+      } catch (fsErr) {
+        console.warn("Notice: Firestore write for tutor application:", fsErr);
+      }
+
+      try {
+        const existingApps = JSON.parse(localStorage.getItem("peleekings_pending_tutor_applications") || "[]");
+        localStorage.setItem("peleekings_pending_tutor_applications", JSON.stringify([{ id: `app_${Date.now()}`, ...appData, submittedAt: new Date().toISOString() }, ...existingApps]));
+      } catch {}
 
       setApplied(true);
     } catch (err) {

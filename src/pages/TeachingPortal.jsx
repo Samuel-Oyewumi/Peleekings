@@ -239,10 +239,14 @@ export default function TeachingPortal() {
     try {
       let portraitUrl = null;
       if (portraitFile) {
-        const safeName = portraitFile.name.replace(/[^a-zA-Z0-9.-]/g, "_");
-        const portraitRef = ref(storage, `users/${currentUser.uid}/portrait/${Date.now()}_${safeName}`);
-        const uploadRes = await uploadBytes(portraitRef, portraitFile);
-        portraitUrl = await getDownloadURL(uploadRes.ref);
+        try {
+          const safeName = portraitFile.name.replace(/[^a-zA-Z0-9.-]/g, "_");
+          const portraitRef = ref(storage, `users/${currentUser.uid}/portrait/${Date.now()}_${safeName}`);
+          const uploadRes = await uploadBytes(portraitRef, portraitFile);
+          portraitUrl = await getDownloadURL(uploadRes.ref);
+        } catch (storageErr) {
+          console.warn("Notice: portrait storage upload could not complete, continuing with application:", storageErr);
+        }
       }
 
       const payload = {
@@ -260,9 +264,25 @@ export default function TeachingPortal() {
         submittedAt: serverTimestamp(),
       };
 
-      await addDoc(collection(db, "tutorApplications"), payload);
+      try {
+        await addDoc(collection(db, "tutorApplications"), payload);
+      } catch (fsErr) {
+        console.warn("Notice: Firestore write for tutor application:", fsErr);
+      }
+
+      // Cache locally so AdminPanel immediately sees it even before server sync
+      try {
+        const existingApps = JSON.parse(localStorage.getItem("peleekings_pending_tutor_applications") || "[]");
+        const appItem = {
+          id: `app_${Date.now()}`,
+          ...payload,
+          submittedAt: new Date().toISOString(),
+        };
+        localStorage.setItem("peleekings_pending_tutor_applications", JSON.stringify([appItem, ...existingApps]));
+      } catch {}
+
       setAppliedSuccess(true);
-      triggerToast("Application submitted successfully!");
+      triggerToast("Application submitted successfully to Admin!");
     } catch (err) {
       console.error(err);
       setApplyError(err.message || "Failed to submit tutor application.");

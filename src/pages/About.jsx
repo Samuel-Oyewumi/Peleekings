@@ -18,14 +18,14 @@ export default function About() {
   const [celebrationDate, setCelebrationDate] = useState(new Date().toISOString().split("T")[0]);
   const [submitted, setSubmitted] = useState(false);
 
-  function handleMilestoneSubmit(e) {
+  async function handleMilestoneSubmit(e) {
     e.preventDefault();
     if (!fullName.trim() || !details.trim()) return;
 
-    submitUserMilestone(currentUser?.uid || "guest", {
-      fullName,
+    await submitUserMilestone(currentUser?.uid || "guest", {
+      fullName: fullName.trim(),
       milestoneType,
-      details,
+      details: details.trim(),
       celebrationDate,
       email: currentUser?.email || userProfile?.email || "visitor"
     });

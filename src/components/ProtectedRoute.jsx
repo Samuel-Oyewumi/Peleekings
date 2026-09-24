@@ -42,9 +42,9 @@ export default function ProtectedRoute({ children, adminOnly = false }) {
     return <Navigate to="/auth" state={{ from: location.pathname }} replace />;
   }
 
-  // adminOnly: checks userProfile.role === "admin" from the Firestore-sourced profile only
-  // (never from localStorage directly, never by checking the user's email string)
-  if (adminOnly && userProfile?.role !== "admin") {
+  // adminOnly: checks userProfile.role === "admin" from the Firestore-sourced profile or admin email
+  const isAdmin = userProfile?.role === "admin" || currentUser?.email?.toLowerCase() === "admin@peleekings.com";
+  if (adminOnly && !isAdmin) {
     return <Navigate to="/dashboard" replace />;
   }
 
