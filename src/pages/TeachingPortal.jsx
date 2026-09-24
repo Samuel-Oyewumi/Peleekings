@@ -69,12 +69,27 @@ export default function TeachingPortal() {
 
   // ── Analytics State ──────────────────────────────────────────────────
   const [analytics, setAnalytics] = useState({
-    enrolledCount: 142,
-    avgScore: "86%",
-    submissionRate: "92%",
-    moduleCount: 6,
-    trend: [12, 28, 45, 68, 92, 118, 142],
+    enrolledCount: "—",
+    avgScore: "—",
+    submissionRate: "—",
+    moduleCount: "—",
+    trend: [],
   });
+  const [loadingAnalytics, setLoadingAnalytics] = useState(false);
+
+  // ── Add Content Modal State ───────────────────────────────────────────
+  const [showAddContentModal, setShowAddContentModal] = useState(false);
+  const [addContentModuleId, setAddContentModuleId] = useState("");
+  const [addContentType, setAddContentType] = useState("note");
+  const [addContentTitle, setAddContentTitle] = useState("");
+  const [addContentBody, setAddContentBody] = useState("");
+  const [addContentFile, setAddContentFile] = useState(null);
+  const [addContentOrder, setAddContentOrder] = useState(1);
+  const [addContentDueAt, setAddContentDueAt] = useState("");
+  const [addContentQuestions, setAddContentQuestions] = useState([
+    { question: "", options: ["", "", "", ""], correctIndex: 0 }
+  ]);
+  const [isSubmittingContent, setIsSubmittingContent] = useState(false);
 
   // ── Resources State ──────────────────────────────────────────────────
   const [resources, setResources] = useState([]);
@@ -168,37 +183,11 @@ export default function TeachingPortal() {
           const items = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
           setSubmissions(items);
         } else {
-          setSubmissions([
-            {
-              id: "sub_1",
-              assignmentId: "l6",
-              courseTitle: "AI Essentials & Automation",
-              studentName: "Esther James",
-              studentEmail: "esther.j@example.com",
-              content: "Completed the Zapier webhook connector and configured JSON schema parsing for lead scoring.",
-              projectLink: "https://zapier.com/shared/demo-pipe-1",
-              status: "submitted",
-              grade: null,
-              feedback: null,
-              submittedAt: { seconds: Date.now() / 1000 - 3600 },
-            },
-            {
-              id: "sub_2",
-              assignmentId: "l6",
-              courseTitle: "AI Essentials & Automation",
-              studentName: "David Okafor",
-              studentEmail: "david.ok@example.com",
-              content: "Implemented automated email summarization pipeline with error boundary fallbacks.",
-              projectLink: "https://github.com/demo/pipe-ai",
-              status: "graded",
-              grade: "A (95%)",
-              feedback: "Excellent documentation and webhook error handling!",
-              submittedAt: { seconds: Date.now() / 1000 - 86400 },
-            },
-          ]);
+          setSubmissions([]);
         }
       } catch (err) {
         console.warn("Notice: could not load submissions:", err);
+        setSubmissions([]);
       } finally {
         setLoadingSubmissions(false);
       }
@@ -208,6 +197,81 @@ export default function TeachingPortal() {
       loadSubmissions();
     }
   }, [isTutor, activeTab]);
+
+  // ── Load Live Analytics from Firestore ──────────────────────────────
+  useEffect(() => {
+    async function loadAnalytics() {
+      if (!selectedCourse?.id) return;
+      setLoadingAnalytics(true);
+      try {
+        // 1. Enrollment count for this course
+        const enrollSnap = await getDocs(
+          query(collection(db, "enrollments"), where("courseId", "==", selectedCourse.id))
+        );
+        const enrolledCount = enrollSnap.size;
+
+        // Build enrollment trend (group by week over last 7 weeks)
+        const now = Date.now();
+        const weekMs = 7 * 24 * 60 * 60 * 1000;
+        const trendBuckets = [0, 0, 0, 0, 0, 0, 0];
+        enrollSnap.docs.forEach((d) => {
+          const enrolledAt = d.data().enrolledAt?.toDate?.()?.getTime?.() || now;
+          const weeksAgo = Math.floor((now - enrolledAt) / weekMs);
+          if (weeksAgo >= 0 && weeksAgo < 7) {
+            trendBuckets[6 - weeksAgo] += 1;
+          }
+        });
+        // Convert to cumulative
+        const cumulativeTrend = trendBuckets.reduce((acc, val, idx) => {
+          acc.push((acc[idx - 1] || 0) + val);
+          return acc;
+        }, []);
+
+        // 2. Assignment submission rate
+        const asnSnap = await getDocs(
+          query(collection(db, "assignmentSubmissions"), where("courseId", "==", selectedCourse.id))
+        );
+        const totalSubs = asnSnap.size;
+        const submissionRate = enrolledCount > 0
+          ? `${Math.min(100, Math.round((totalSubs / enrolledCount) * 100))}%`
+          : "0%";
+
+        // 3. Average test score from testSubmissions
+        const testSnap = await getDocs(
+          query(collection(db, "testSubmissions"), where("courseId", "==", selectedCourse.id))
+        );
+        let avgScore = "N/A";
+        if (!testSnap.empty) {
+          const scores = testSnap.docs
+            .map((d) => d.data().score)
+            .filter((s) => typeof s === "number");
+          if (scores.length > 0) {
+            avgScore = `${Math.round(scores.reduce((a, b) => a + b, 0) / scores.length)}%`;
+          }
+        }
+
+        // 4. Module count
+        const modSnap = await getDocs(collection(db, "courses", selectedCourse.id, "modules"));
+        const moduleCount = modSnap.size || modules.length || 0;
+
+        setAnalytics({
+          enrolledCount,
+          avgScore,
+          submissionRate,
+          moduleCount,
+          trend: cumulativeTrend,
+        });
+      } catch (err) {
+        console.warn("Notice: could not load analytics:", err);
+      } finally {
+        setLoadingAnalytics(false);
+      }
+    }
+
+    if (isTutor && activeTab === "analytics") {
+      loadAnalytics();
+    }
+  }, [isTutor, activeTab, selectedCourse?.id, modules.length]);
 
   // Load Resources
   useEffect(() => {
@@ -312,6 +376,97 @@ export default function TeachingPortal() {
       triggerToast("Could not add module.");
     } finally {
       setIsCreatingModule(false);
+    }
+  }
+
+  // ── Handle Add Content to Module ─────────────────────────────────────
+  async function handleAddContent(e) {
+    e.preventDefault();
+    if (!addContentTitle.trim() || !addContentModuleId || !selectedCourse?.id) return;
+    setIsSubmittingContent(true);
+    try {
+      let fileUrl = null;
+      if (addContentFile) {
+        const safeName = addContentFile.name.replace(/[^a-zA-Z0-9.-]/g, "_");
+        const storageRef = ref(storage, `courses/${selectedCourse.id}/${addContentModuleId}/${Date.now()}_${safeName}`);
+        const uploadRes = await uploadBytes(storageRef, addContentFile);
+        fileUrl = await getDownloadURL(uploadRes.ref);
+      }
+
+      const collectionName =
+        addContentType === "note" ? "notes"
+        : addContentType === "assignment" ? "assignments"
+        : addContentType === "announcement" ? "announcements"
+        : "tests";
+
+      const basePayload = {
+        title: addContentTitle.trim(),
+        moduleId: addContentModuleId,
+        order: Number(addContentOrder) || 1,
+        createdAt: serverTimestamp(),
+        uploadedBy: currentUser.uid,
+      };
+
+      let payload = { ...basePayload };
+      if (addContentType === "note") {
+        payload.fileUrl = fileUrl;
+        payload.body = addContentBody.trim();
+      } else if (addContentType === "assignment") {
+        payload.instructions = addContentBody.trim();
+        payload.attachmentUrl = fileUrl;
+        payload.dueAt = addContentDueAt || null;
+      } else if (addContentType === "announcement") {
+        payload.body = addContentBody.trim();
+        payload.postedBy = userProfile?.fullName || currentUser.email;
+      } else if (addContentType === "test") {
+        payload.questions = addContentQuestions.filter((q) => q.question.trim());
+        payload.dueAt = addContentDueAt || null;
+      }
+
+      await addDoc(collection(db, "courses", selectedCourse.id, collectionName), payload);
+
+      // Notify all enrolled students about new content
+      try {
+        const enrollSnap = await getDocs(
+          query(collection(db, "enrollments"), where("courseId", "==", selectedCourse.id))
+        );
+        const notifyType = addContentType === "announcement" ? "announcement" : "new_content";
+        const notifyTitle = addContentType === "announcement"
+          ? `Announcement: ${addContentTitle.trim()}`
+          : `New ${addContentType} added: ${addContentTitle.trim()}`;
+        const notifyBody = addContentType === "announcement"
+          ? addContentBody.trim()
+          : `A new ${addContentType} has been added to ${selectedCourse.title}. Check your classroom!`;
+
+        const notifyPromises = enrollSnap.docs
+          .map((d) => d.data().uid)
+          .filter((uid) => uid && uid !== currentUser.uid)
+          .map((uid) => createNotification(uid, {
+            type: notifyType,
+            title: notifyTitle,
+            body: notifyBody,
+            courseId: selectedCourse.id,
+          }));
+        await Promise.allSettled(notifyPromises);
+      } catch (notifErr) {
+        console.warn("Notice: could not send notifications:", notifErr);
+      }
+
+      // Reset form
+      setAddContentTitle("");
+      setAddContentBody("");
+      setAddContentFile(null);
+      setAddContentOrder(1);
+      setAddContentDueAt("");
+      setAddContentQuestions([{ question: "", options: ["", "", "", ""], correctIndex: 0 }]);
+      setShowAddContentModal(false);
+      setIsAddingContent(false);
+      triggerToast(`✓ ${addContentType.charAt(0).toUpperCase() + addContentType.slice(1)} published and students notified!`);
+    } catch (err) {
+      console.error(err);
+      triggerToast("Failed to add content. Please try again.");
+    } finally {
+      setIsSubmittingContent(false);
     }
   }
 
@@ -772,8 +927,15 @@ export default function TeachingPortal() {
                     <div style={{ display: "flex", gap: 8 }}>
                       <button
                         onClick={() => {
-                          setSelectedModuleId(mod.id);
-                          setIsAddingContent(true);
+                          setAddContentModuleId(mod.id);
+                          setAddContentOrder(1);
+                          setAddContentType("note");
+                          setAddContentTitle("");
+                          setAddContentBody("");
+                          setAddContentFile(null);
+                          setAddContentDueAt("");
+                          setAddContentQuestions([{ question: "", options: ["", "", "", ""], correctIndex: 0 }]);
+                          setShowAddContentModal(true);
                         }}
                         className="btn btn-outline btn-sm"
                       >
@@ -784,6 +946,123 @@ export default function TeachingPortal() {
                 ))}
               </div>
             </div>
+
+            {/* ── Add Content Modal ──────────────────────────────── */}
+            {showAddContentModal && (
+              <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 999, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+                <div style={{ background: "#FFFFFF", borderRadius: 12, padding: 32, maxWidth: 600, width: "100%", maxHeight: "90vh", overflowY: "auto", boxShadow: "0 20px 60px rgba(0,0,0,0.25)" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
+                    <div>
+                      <h3 style={{ fontSize: "1.2rem", fontWeight: 800, margin: 0 }}>Add Content to Module</h3>
+                      <div style={{ fontSize: "0.8rem", color: "var(--text-muted)", marginTop: 4 }}>
+                        {modules.find((m) => m.id === addContentModuleId)?.title || "Selected Module"}
+                      </div>
+                    </div>
+                    <button onClick={() => { setShowAddContentModal(false); setIsAddingContent(false); }} style={{ background: "none", border: "none", fontSize: "1.4rem", cursor: "pointer", color: "var(--text-muted)" }}>✕</button>
+                  </div>
+
+                  {/* Content Type Tabs */}
+                  <div style={{ display: "flex", gap: 8, marginBottom: 20, background: "var(--bg-main)", padding: 6, borderRadius: 8 }}>
+                    {["note", "test", "assignment", "announcement"].map((t) => (
+                      <button
+                        key={t}
+                        onClick={() => setAddContentType(t)}
+                        style={{
+                          flex: 1, padding: "8px 6px", border: "none", borderRadius: 6, cursor: "pointer", fontSize: "0.8rem", fontWeight: 700,
+                          background: addContentType === t ? "#1C1D1F" : "transparent",
+                          color: addContentType === t ? "#FFFFFF" : "var(--text-muted)",
+                          textTransform: "capitalize",
+                        }}
+                      >
+                        {t === "note" ? "📄 Note" : t === "test" ? "📝 Test" : t === "assignment" ? "📋 Assignment" : "📢 Announcement"}
+                      </button>
+                    ))}
+                  </div>
+
+                  <form onSubmit={handleAddContent}>
+                    {/* Title */}
+                    <div className="form-field-group">
+                      <label className="form-field-label">Title *</label>
+                      <input type="text" required value={addContentTitle} onChange={(e) => setAddContentTitle(e.target.value)} className="form-field-input" placeholder={addContentType === "announcement" ? "e.g. Live Session This Friday at 6PM" : `e.g. ${addContentType === "note" ? "Introduction to Prompt Engineering" : addContentType === "test" ? "Module 1 Quiz" : "Final Capstone Assignment"}`} />
+                    </div>
+
+                    {/* Body / Instructions */}
+                    {(addContentType === "note" || addContentType === "assignment" || addContentType === "announcement") && (
+                      <div className="form-field-group">
+                        <label className="form-field-label">{addContentType === "assignment" ? "Instructions *" : addContentType === "announcement" ? "Message Body *" : "Summary / Notes Body"}</label>
+                        <textarea rows={4} value={addContentBody} onChange={(e) => setAddContentBody(e.target.value)} className="form-field-input" required={addContentType !== "note"} placeholder="Enter details here..." />
+                      </div>
+                    )}
+
+                    {/* File Upload (note + assignment) */}
+                    {(addContentType === "note" || addContentType === "assignment") && (
+                      <div className="form-field-group">
+                        <label className="form-field-label">Attach File (PDF, ZIP, DOC, Image)</label>
+                        <input type="file" onChange={(e) => setAddContentFile(e.target.files[0] || null)} style={{ fontSize: "0.85rem", width: "100%" }} />
+                      </div>
+                    )}
+
+                    {/* Due Date (test + assignment) */}
+                    {(addContentType === "test" || addContentType === "assignment") && (
+                      <div className="form-field-group">
+                        <label className="form-field-label">Due Date (Optional)</label>
+                        <input type="datetime-local" value={addContentDueAt} onChange={(e) => setAddContentDueAt(e.target.value)} className="form-field-input" />
+                      </div>
+                    )}
+
+                    {/* Test Questions Builder */}
+                    {addContentType === "test" && (
+                      <div>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                          <label className="form-field-label" style={{ marginBottom: 0 }}>Test Questions *</label>
+                          <button type="button" onClick={() => setAddContentQuestions((prev) => [...prev, { question: "", options: ["", "", "", ""], correctIndex: 0 }])} style={{ fontSize: "0.8rem", background: "none", border: "1px solid var(--border-light)", borderRadius: 6, padding: "4px 10px", cursor: "pointer" }}>+ Add Question</button>
+                        </div>
+                        {addContentQuestions.map((q, qi) => (
+                          <div key={qi} style={{ border: "1px solid var(--border-light)", borderRadius: 8, padding: 16, marginBottom: 12, background: "var(--bg-main)" }}>
+                            <div style={{ fontWeight: 700, fontSize: "0.85rem", marginBottom: 8 }}>Q{qi + 1}</div>
+                            <input
+                              type="text" required
+                              placeholder="Enter question text..."
+                              value={q.question}
+                              onChange={(e) => setAddContentQuestions((prev) => prev.map((item, i) => i === qi ? { ...item, question: e.target.value } : item))}
+                              className="form-field-input"
+                              style={{ marginBottom: 10 }}
+                            />
+                            {q.options.map((opt, oi) => (
+                              <div key={oi} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                                <input type="radio" name={`correct_${qi}`} checked={q.correctIndex === oi} onChange={() => setAddContentQuestions((prev) => prev.map((item, i) => i === qi ? { ...item, correctIndex: oi } : item))} title="Mark as correct answer" />
+                                <input
+                                  type="text" required
+                                  placeholder={`Option ${oi + 1}`}
+                                  value={opt}
+                                  onChange={(e) => setAddContentQuestions((prev) => prev.map((item, i) => i === qi ? { ...item, options: item.options.map((o, j) => j === oi ? e.target.value : o) } : item))}
+                                  className="form-field-input"
+                                  style={{ flex: 1 }}
+                                />
+                              </div>
+                            ))}
+                            <div style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginTop: 4 }}>Click radio button to mark correct answer</div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Order */}
+                    <div className="form-field-group">
+                      <label className="form-field-label">Order in Module</label>
+                      <input type="number" min={1} value={addContentOrder} onChange={(e) => setAddContentOrder(e.target.value)} className="form-field-input" style={{ width: 100 }} />
+                    </div>
+
+                    <div style={{ display: "flex", gap: 10, marginTop: 8 }}>
+                      <button type="button" onClick={() => { setShowAddContentModal(false); setIsAddingContent(false); }} className="btn btn-outline btn-md" style={{ flex: 1 }}>Cancel</button>
+                      <button type="submit" disabled={isSubmittingContent} className="btn btn-solid-dark btn-md" style={{ flex: 2 }}>
+                        {isSubmittingContent ? "Publishing..." : `Publish ${addContentType.charAt(0).toUpperCase() + addContentType.slice(1)} →`}
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -912,11 +1191,19 @@ export default function TeachingPortal() {
         {/* ── TAB: COURSE ANALYTICS ──────────────────────────────────── */}
         {activeTab === "analytics" && (
           <div>
-            <div style={{ marginBottom: 24 }}>
-              <h2 style={{ fontSize: "1.4rem", fontWeight: 800 }}>Course Analytics &amp; Performance</h2>
-              <p style={{ fontSize: "0.875rem", color: "var(--text-muted)" }}>
-                Key learning milestones, assessment averages, and enrollment velocity.
-              </p>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 24, flexWrap: "wrap", gap: 12 }}>
+              <div>
+                <h2 style={{ fontSize: "1.4rem", fontWeight: 800 }}>Course Analytics &amp; Performance</h2>
+                <p style={{ fontSize: "0.875rem", color: "var(--text-muted)" }}>
+                  Live enrollment counts, assessment averages, and submission metrics from Firestore.
+                </p>
+              </div>
+              {loadingAnalytics && (
+                <div style={{ display: "flex", alignItems: "center", gap: 8, color: "var(--text-muted)", fontSize: "0.85rem" }}>
+                  <div style={{ width: 16, height: 16, border: "2px solid #E2E8F0", borderTopColor: "var(--primary-learner)", borderRadius: "50%", animation: "spin 0.6s linear infinite" }} />
+                  Loading live data...
+                </div>
+              )}
             </div>
 
             {/* Stat Cards */}
@@ -928,27 +1215,27 @@ export default function TeachingPortal() {
                 <div style={{ fontSize: "2rem", fontWeight: 800, color: "var(--primary-learner)", marginTop: 6 }}>
                   {analytics.enrolledCount}
                 </div>
-                <div style={{ fontSize: "0.75rem", color: "#166534", marginTop: 4 }}>+18% from last month</div>
+                <div style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginTop: 4 }}>Live from Firestore</div>
               </div>
 
               <div style={{ background: "#FFFFFF", border: "1px solid var(--border-light)", borderRadius: "12px", padding: 20 }}>
                 <div style={{ fontSize: "0.8rem", color: "var(--text-muted)", fontWeight: 700, textTransform: "uppercase" }}>
-                  Avg Assessment Score
+                  Avg Test Score
                 </div>
                 <div style={{ fontSize: "2rem", fontWeight: 800, color: "var(--text-primary)", marginTop: 6 }}>
                   {analytics.avgScore}
                 </div>
-                <div style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginTop: 4 }}>Across all quiz modules</div>
+                <div style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginTop: 4 }}>Across all test submissions</div>
               </div>
 
               <div style={{ background: "#FFFFFF", border: "1px solid var(--border-light)", borderRadius: "12px", padding: 20 }}>
                 <div style={{ fontSize: "0.8rem", color: "var(--text-muted)", fontWeight: 700, textTransform: "uppercase" }}>
-                  Submission Rate
+                  Assignment Submission Rate
                 </div>
                 <div style={{ fontSize: "2rem", fontWeight: 800, color: "var(--text-primary)", marginTop: 6 }}>
                   {analytics.submissionRate}
                 </div>
-                <div style={{ fontSize: "0.75rem", color: "#166534", marginTop: 4 }}>High engagement</div>
+                <div style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginTop: 4 }}>Submissions ÷ enrollments</div>
               </div>
 
               <div style={{ background: "#FFFFFF", border: "1px solid var(--border-light)", borderRadius: "12px", padding: 20 }}>
@@ -958,36 +1245,43 @@ export default function TeachingPortal() {
                 <div style={{ fontSize: "2rem", fontWeight: 800, color: "var(--text-primary)", marginTop: 6 }}>
                   {analytics.moduleCount}
                 </div>
-                <div style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginTop: 4 }}>All lessons active</div>
+                <div style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginTop: 4 }}>Total course modules</div>
               </div>
             </div>
 
-            {/* Cumulative Enrollment Velocity Line Chart */}
+            {/* Cumulative Enrollment Growth Chart */}
             <div style={{ background: "#FFFFFF", border: "1px solid var(--border-light)", borderRadius: "12px", padding: 24 }}>
-              <h3 style={{ fontSize: "1.1rem", fontWeight: 700, marginBottom: 16 }}>
-                Cumulative Enrollment Growth
-              </h3>
-              <div style={{ height: 180, display: "flex", alignItems: "flex-end", gap: 24, padding: "10px 0", borderBottom: "1px solid var(--border-light)" }}>
-                {analytics.trend.map((val, idx) => {
-                  const heightPercent = Math.round((val / 160) * 100);
-                  return (
-                    <div key={idx} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
-                      <span style={{ fontSize: "0.75rem", fontWeight: 700, color: "var(--primary-learner)" }}>{val}</span>
-                      <div
-                        style={{
-                          width: "100%",
-                          maxWidth: 36,
-                          height: `${heightPercent}%`,
-                          background: "var(--primary-learner)",
-                          borderRadius: "4px 4px 0 0",
-                          transition: "height 0.4s ease",
-                        }}
-                      />
-                      <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>Wk {idx + 1}</span>
-                    </div>
-                  );
-                })}
-              </div>
+              <h3 style={{ fontSize: "1.1rem", fontWeight: 700, marginBottom: 4 }}>Cumulative Enrollment Growth</h3>
+              <p style={{ fontSize: "0.8rem", color: "var(--text-muted)", marginBottom: 16 }}>New enrollments by week over the last 7 weeks</p>
+              {analytics.trend.length === 0 ? (
+                <div style={{ height: 160, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-muted)", fontSize: "0.875rem", background: "var(--bg-main)", borderRadius: 8 }}>
+                  {loadingAnalytics ? "Loading chart data..." : "No enrollment data available yet."}
+                </div>
+              ) : (
+                <div style={{ height: 180, display: "flex", alignItems: "flex-end", gap: 12, padding: "10px 0", borderBottom: "1px solid var(--border-light)" }}>
+                  {analytics.trend.map((val, idx) => {
+                    const maxVal = Math.max(...analytics.trend, 1);
+                    const heightPercent = Math.max(4, Math.round((val / maxVal) * 100));
+                    return (
+                      <div key={idx} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
+                        <span style={{ fontSize: "0.7rem", fontWeight: 700, color: "var(--primary-learner)" }}>{val}</span>
+                        <div
+                          style={{
+                            width: "100%",
+                            maxWidth: 40,
+                            height: `${heightPercent}%`,
+                            background: "var(--primary-learner)",
+                            borderRadius: "4px 4px 0 0",
+                            transition: "height 0.6s ease",
+                            opacity: 0.85,
+                          }}
+                        />
+                        <span style={{ fontSize: "0.7rem", color: "var(--text-muted)" }}>Wk {idx + 1}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           </div>
         )}
