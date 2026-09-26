@@ -574,42 +574,52 @@ export default function Dashboard() {
                   </button>
                 </div>
 
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16 }}>
-                  {enrolledCourses.map(c => (
-                    <div
-                      key={c.id}
-                      style={{
-                        border: "1px solid var(--border-light)",
-                        borderRadius: "var(--radius-sm)",
-                        padding: 14,
-                        display: "flex",
-                        flexDirection: "column",
-                        background: "#F8FAFC",
-                        cursor: "pointer"
-                      }}
-                      onClick={() => navigate(`/course/${c.id}`, { state: { classroom: true } })}
-                    >
-                      <div style={{ height: 90, borderRadius: 6, overflow: "hidden", marginBottom: 10, background: "#0F172A" }}>
-                        <img src={c.image} alt={c.title} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                      </div>
-                      <div style={{ fontWeight: 700, fontSize: "0.875rem", marginBottom: 4, lineHeight: 1.3 }}>
-                        {c.title}
-                      </div>
-                      <div style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginBottom: 12 }}>
-                        {c.type}
-                      </div>
-                      <div style={{ marginTop: "auto" }}>
-                        <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.75rem", fontWeight: 600, marginBottom: 4 }}>
-                          <span>Progress</span>
-                          <span>{c.progress}%</span>
+                {enrolledCourses.length === 0 ? (
+                  <div style={{ textAlign: "center", padding: "32px 16px", color: "var(--text-muted)", background: "#F8FAFC", borderRadius: "var(--radius-sm)", border: "1px dashed var(--border-light)" }}>
+                    <p style={{ fontSize: "0.9rem", marginBottom: 12 }}>You haven't enrolled in any courses yet.</p>
+                    <button className="btn btn-primary btn-sm" onClick={() => setActiveNav("browse-courses")}>
+                      Explore Courses &rarr;
+                    </button>
+                  </div>
+                ) : (
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: 16 }}>
+                    {enrolledCourses.map(c => (
+                      <div
+                        key={c.id}
+                        style={{
+                          border: "1px solid var(--border-light)",
+                          borderRadius: "var(--radius-sm)",
+                          padding: 14,
+                          display: "flex",
+                          flexDirection: "column",
+                          background: "#F8FAFC",
+                          cursor: "pointer",
+                          transition: "transform 0.15s ease, box-shadow 0.15s ease"
+                        }}
+                        onClick={() => navigate(`/course/${c.id}`, { state: { classroom: true } })}
+                      >
+                        <div style={{ height: 90, borderRadius: 6, overflow: "hidden", marginBottom: 10, background: "#0F172A" }}>
+                          <img src={c.image} alt={c.title} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                         </div>
-                        <div style={{ width: "100%", height: 5, background: "#E2E8F0", borderRadius: 99, overflow: "hidden" }}>
-                          <div style={{ width: `${c.progress}%`, height: "100%", background: c.progress > 0 ? "var(--primary-learner)" : "transparent", borderRadius: 99 }} />
+                        <div style={{ fontWeight: 700, fontSize: "0.875rem", marginBottom: 4, lineHeight: 1.3 }}>
+                          {c.title}
+                        </div>
+                        <div style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginBottom: 12 }}>
+                          {c.type}
+                        </div>
+                        <div style={{ marginTop: "auto" }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.75rem", fontWeight: 600, marginBottom: 4 }}>
+                            <span>Progress</span>
+                            <span>{c.progress}%</span>
+                          </div>
+                          <div style={{ width: "100%", height: 5, background: "#E2E8F0", borderRadius: 99, overflow: "hidden" }}>
+                            <div style={{ width: `${c.progress}%`, height: "100%", background: c.progress > 0 ? "var(--primary-learner)" : "transparent", borderRadius: 99 }} />
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
               {/* Upcoming Schedule / Deadlines Panel */}

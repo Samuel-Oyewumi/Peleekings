@@ -1458,6 +1458,10 @@ img {
     grid-template-columns: 1fr;
     position: relative;
   }
+  .dashboard-top-widgets-grid {
+    grid-template-columns: 1fr;
+    gap: 20px;
+  }
 
   /* Off-canvas mobile sidebar drawer for Dashboard */
   .portal-left-sidebar {
