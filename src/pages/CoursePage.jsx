@@ -60,6 +60,7 @@ export default function CoursePage() {
 
   const [viewMode, setViewMode] = useState(location.state?.classroom ? "classroom" : "detail");
   const [selectedExperience, setSelectedExperience] = useState("online"); // "online" or "hands-on"
+  const [isEnrolling, setIsEnrolling] = useState(false);
   
   // Classroom lesson state with saved progress
   const [modules, setModules] = useState(COURSE_MODULES);
@@ -361,16 +362,41 @@ export default function CoursePage() {
     }
 
     setSelectedExperience(experienceType);
-    try {
-      const res = await enrollInCourse(currentUser.uid, courseData.id, experienceType);
-      setEnrollment(res);
-      setIsEnrolled(true);
-      triggerToast(`🎉 Successfully enrolled in ${experienceType === "online" ? "Online Classes" : "Hands-on Training"}!`);
+
+    // If already enrolled in this exact format, immediately enter classroom!
+    if (isEnrolled && enrollment?.experienceType === experienceType) {
       setViewMode("classroom");
-    } catch (err) {
-      console.error("Enrollment error:", err);
-      triggerToast("Enrollment failed. Please try again.");
+      return;
     }
+
+    setIsEnrolling(true);
+
+    const enrollmentId = `${currentUser.uid}_${courseData.id}`;
+    const optimisticEnr = {
+      id: enrollmentId,
+      uid: currentUser.uid,
+      courseId: courseData.id,
+      courseTitle: courseData.title,
+      status: "active",
+      experienceType,
+      completedItemIds: enrollment?.completedItemIds || [],
+      progressPercent: enrollment?.progressPercent || 0,
+      totalLessons: modules.flatMap((m) => m.lessons).length || 8,
+      currentModule: enrollment?.currentModule || "Module 1",
+    };
+
+    setEnrollment(optimisticEnr);
+    setIsEnrolled(true);
+
+    triggerToast(`🎉 ${isEnrolled ? "Track switched to" : "Enrolled in"} ${experienceType === "online" ? "Online Classes" : "Hands-on Training"}! Entering classroom...`);
+
+    // Switch to classroom view immediately — zero lag
+    setViewMode("classroom");
+
+    // Sync in background without blocking the UI
+    enrollInCourse(currentUser.uid, courseData.id, experienceType, optimisticEnr.totalLessons)
+      .catch((err) => console.warn("Background enrollment notice:", err))
+      .finally(() => setIsEnrolling(false));
   }
 
   async function handleAssignmentSubmit(e) {
@@ -1349,6 +1375,13 @@ export default function CoursePage() {
   ────────────────────────────────────────────────────────────────────────── */
   return (
     <div className="course-detail-page">
+      {/* Toast Notification Banner on Detail View */}
+      {toastMessage && (
+        <div style={{ position: "fixed", top: 80, right: 24, zIndex: 1000, background: "#0F172A", color: "#FFFFFF", padding: "12px 20px", borderRadius: "var(--radius-sm)", boxShadow: "var(--shadow-lg)", fontSize: "0.875rem", fontWeight: 600, display: "flex", alignItems: "center", gap: 10 }}>
+          <span>✓</span> {toastMessage}
+        </div>
+      )}
+
       {/* Back Breadcrumb */}
       <Link to="/" className="back-breadcrumb">
         &larr; Back
@@ -1391,9 +1424,10 @@ export default function CoursePage() {
             ) : (
               <button
                 className="btn btn-solid-dark btn-lg"
+                disabled={isEnrolling}
                 onClick={() => handleEnroll("online")}
               >
-                Enroll Now
+                {isEnrolling ? "Enrolling..." : "Enroll Now"}
               </button>
             )}
 
@@ -1429,7 +1463,16 @@ export default function CoursePage() {
           {/* Card 1: Online Classes */}
           <div
             className="experience-card"
-            style={{ border: selectedExperience === "online" ? "2px solid #0F172A" : "1px solid var(--border-light)" }}
+            style={{
+              border: (isEnrolled && (enrollment?.experienceType === "online" || selectedExperience === "online"))
+                ? "2px solid var(--primary-learner)"
+                : selectedExperience === "online"
+                ? "2px solid #0F172A"
+                : "1px solid var(--border-light)",
+              cursor: "pointer",
+              transition: "transform 0.15s ease, box-shadow 0.15s ease",
+            }}
+            onClick={() => handleEnroll("online")}
           >
             <div className="experience-card-header">
               <div className="experience-icon-box">
@@ -1457,16 +1500,35 @@ export default function CoursePage() {
             <button
               className="btn btn-solid-dark btn-lg"
               style={{ marginTop: "auto", width: "100%" }}
-              onClick={() => handleEnroll("online")}
+              disabled={isEnrolling}
+              onClick={(e) => {
+                e.stopPropagation();
+                handleEnroll("online");
+              }}
             >
-              Choose Online &rarr;
+              {isEnrolled && (enrollment?.experienceType === "online" || selectedExperience === "online")
+                ? "✓ Enrolled • Enter Classroom →"
+                : isEnrolling && selectedExperience === "online"
+                ? "Enrolling..."
+                : isEnrolled
+                ? "Switch to Online →"
+                : "Choose Online →"}
             </button>
           </div>
 
           {/* Card 2: Hands-on Training */}
           <div
             className="experience-card"
-            style={{ border: selectedExperience === "hands-on" ? "2px solid #0F172A" : "1px solid var(--border-light)" }}
+            style={{
+              border: (isEnrolled && (enrollment?.experienceType === "hands-on" || selectedExperience === "hands-on"))
+                ? "2px solid var(--primary-learner)"
+                : selectedExperience === "hands-on"
+                ? "2px solid #0F172A"
+                : "1px solid var(--border-light)",
+              cursor: "pointer",
+              transition: "transform 0.15s ease, box-shadow 0.15s ease",
+            }}
+            onClick={() => handleEnroll("hands-on")}
           >
             <div className="experience-card-header">
               <div className="experience-icon-box" style={{ background: "#F5F3FF", color: "#5624D0" }}>
@@ -1495,9 +1557,19 @@ export default function CoursePage() {
             <button
               className="btn btn-solid-dark btn-lg"
               style={{ marginTop: "auto", width: "100%" }}
-              onClick={() => handleEnroll("hands-on")}
+              disabled={isEnrolling}
+              onClick={(e) => {
+                e.stopPropagation();
+                handleEnroll("hands-on");
+              }}
             >
-              Choose Hands-on &rarr;
+              {isEnrolled && (enrollment?.experienceType === "hands-on" || selectedExperience === "hands-on")
+                ? "✓ Enrolled • Enter Classroom →"
+                : isEnrolling && selectedExperience === "hands-on"
+                ? "Enrolling..."
+                : isEnrolled
+                ? "Switch to Hands-on →"
+                : "Choose Hands-on →"}
             </button>
           </div>
         </div>

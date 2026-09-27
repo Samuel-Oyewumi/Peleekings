@@ -215,9 +215,11 @@ export async function enrollInCourse(uid, courseId, experienceType = "online", t
     console.warn("Notice: could not update local cache for enrollment:", cacheErr);
   }
 
-  // 2. Persist directly to Firestore
+  // 2. Persist directly to Firestore in background (never blocks UI)
   try {
-    await setDoc(enrollmentRef, newEnrollment, { merge: true });
+    setDoc(enrollmentRef, newEnrollment, { merge: true }).catch((err) => {
+      console.warn(`Firestore enrollment sync notice for ${enrollmentId}:`, err);
+    });
   } catch (err) {
     console.warn(`Firestore enrollment sync notice for ${enrollmentId}:`, err);
   }
