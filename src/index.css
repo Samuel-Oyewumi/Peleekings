@@ -1142,6 +1142,7 @@ img {
   border-radius: var(--radius-md);
   padding: 24px;
   box-shadow: var(--shadow-sm);
+  min-width: 0;
 }
 
 .chart-bars-row {
@@ -1151,6 +1152,7 @@ img {
   height: 100px;
   margin-top: 16px;
   padding-top: 10px;
+  min-width: 0;
 }
 
 .chart-bar-col {
@@ -1159,16 +1161,26 @@ img {
   align-items: center;
   gap: 6px;
   flex: 1;
+  min-width: 0;
 }
 
 .chart-bar-pillar {
-  width: 14px;
-  border-radius: 4px;
+  width: 16px;
+  min-width: 10px;
+  max-width: 22px;
+  border-radius: 4px 4px 2px 2px;
   background: #E2E8F0;
-  transition: height 0.3s ease;
+  transition: height 0.3s cubic-bezier(0.16, 1, 0.3, 1), background-color 0.2s ease;
+  cursor: pointer;
+}
+.chart-bar-pillar:hover {
+  background: #CBD5E1;
 }
 .chart-bar-pillar.highlighted {
   background: var(--primary-learner);
+}
+.chart-bar-pillar.highlighted:hover {
+  background: #1D4ED8;
 }
 
 /* ── Tutor & Admin Portals (Screens 7, 8, 9) ──────────────────────────── */
@@ -1620,6 +1632,16 @@ img {
   .continue-learning-widget-card img {
     width: 100% !important;
     height: 140px !important;
+  }
+  .activity-chart-widget-card {
+    padding: 18px 14px !important;
+  }
+  .chart-bars-row {
+    height: 85px !important;
+    margin-top: 12px !important;
+  }
+  .chart-bar-pillar {
+    width: 12px !important;
   }
   .dashboard-browse-header {
     flex-direction: column;

@@ -48,23 +48,35 @@ export default function Dashboard() {
   const [liveEnrollments, setLiveEnrollments] = useState([]);
   const [weeklyActivityLive, setWeeklyActivityLive] = useState(null);
 
-  // Load live weekly activity from Firestore
+  // Load live weekly activity
   useEffect(() => {
     if (!currentUser?.uid) return;
-    getWeeklyActivityData(currentUser.uid).then((data) => {
-      if (data) setWeeklyActivityLive(data);
-    });
+
+    function refreshActivity() {
+      getWeeklyActivityData(currentUser.uid).then((data) => {
+        if (data) setWeeklyActivityLive(data);
+      });
+    }
+
+    refreshActivity();
+
+    // Listen for instant increments from anywhere in the app
+    function onActivityIncremented(e) {
+      if (e.detail?.uid === currentUser.uid) {
+        refreshActivity();
+      }
+    }
+    window.addEventListener("peleekings_activity_incremented", onActivityIncremented);
 
     // Track active time: increment every 60 seconds while Dashboard is open
     const activityInterval = setInterval(() => {
       incrementDailyActivity(currentUser.uid, 1);
-      // Refresh the chart every 5 minutes (every 5 ticks)
-      getWeeklyActivityData(currentUser.uid).then((data) => {
-        if (data) setWeeklyActivityLive(data);
-      });
     }, 60000);
 
-    return () => clearInterval(activityInterval);
+    return () => {
+      clearInterval(activityInterval);
+      window.removeEventListener("peleekings_activity_incremented", onActivityIncremented);
+    };
   }, [currentUser?.uid]);
 
   useEffect(() => {
@@ -530,11 +542,23 @@ export default function Dashboard() {
                     <div style={{ fontSize: "1.75rem", fontWeight: 800, marginTop: 4, color: "var(--text-primary)" }}>
                       {totalWeeklyLabel}
                     </div>
-                    {weeklyActivityLive && (
-                      <div style={{ fontSize: "0.7rem", color: "var(--text-muted)", marginTop: 2 }}>Live from Firestore</div>
-                    )}
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4 }}>
+                      <span
+                        style={{
+                          width: 8,
+                          height: 8,
+                          borderRadius: "50%",
+                          background: (totalWeeklyMinutes > 0) ? "#10B981" : "#94A3B8",
+                          boxShadow: (totalWeeklyMinutes > 0) ? "0 0 8px rgba(16, 185, 129, 0.6)" : "none",
+                          display: "inline-block",
+                        }}
+                      />
+                      <span style={{ fontSize: "0.72rem", color: "var(--text-muted)", fontWeight: 500 }}>
+                        Live Activity Tracker
+                      </span>
+                    </div>
                   </div>
-                  {weeklyActivityLive && totalWeeklyMinutes > 0 ? (
+                  {(totalWeeklyMinutes > 0) ? (
                     <span className="pill-badge pill-success" style={{ fontSize: "0.75rem" }}>Active</span>
                   ) : (
                     <span className="pill-badge" style={{ fontSize: "0.75rem", background: "#F1F5F9", color: "var(--text-muted)" }}>This Week</span>

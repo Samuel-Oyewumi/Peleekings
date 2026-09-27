@@ -21,37 +21,67 @@ import { COURSES_CATALOG } from "../data/courses";
 
 // ── Daily Activity Tracking ────────────────────────────────────────────────
 
+function getLocalDailyActivity(uid) {
+  if (!uid || typeof window === "undefined") return {};
+  try {
+    const raw = localStorage.getItem(`peleekings_daily_activity_${uid}`);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveLocalDailyActivity(uid, data) {
+  if (!uid || typeof window === "undefined") return;
+  try {
+    localStorage.setItem(`peleekings_daily_activity_${uid}`, JSON.stringify(data));
+  } catch {}
+}
+
 /**
  * Increment a user's daily activity minutes for today.
- * Stored at: users/{uid}/dailyActivity/{YYYY-MM-DD}
- * Call this periodically (e.g. every 1 minute) while user is active on a course page.
+ * Stored locally for instant UI responsiveness and synced to Firestore at:
+ * users/{uid}/dailyActivity/{YYYY-MM-DD}
  */
 export async function incrementDailyActivity(uid, minutesToAdd = 1) {
   if (!uid) return;
   const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+
+  // 1. Immediately update local storage
+  const localMap = getLocalDailyActivity(uid);
+  const updatedMinutes = (localMap[today] || 0) + minutesToAdd;
+  localMap[today] = updatedMinutes;
+  saveLocalDailyActivity(uid, localMap);
+
+  // 2. Dispatch immediate window event so open pages (Dashboard, CoursePage) update in real-time
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(
+      new CustomEvent("peleekings_activity_incremented", {
+        detail: { uid, dateStr: today, minutes: updatedMinutes, minutesAdded: minutesToAdd },
+      })
+    );
+  }
+
+  // 3. Persist to Firestore in the background
   const dayRef = doc(db, "users", uid, "dailyActivity", today);
   try {
-    const snap = await getDoc(dayRef);
-    if (snap.exists()) {
-      await updateDoc(dayRef, {
-        minutes: (snap.data().minutes || 0) + minutesToAdd,
-        updatedAt: serverTimestamp(),
-      });
-    } else {
-      await setDoc(dayRef, {
+    await setDoc(
+      dayRef,
+      {
         date: today,
-        minutes: minutesToAdd,
-        createdAt: serverTimestamp(),
+        minutes: updatedMinutes,
         updatedAt: serverTimestamp(),
-      });
-    }
+      },
+      { merge: true }
+    );
   } catch (err) {
-    console.warn("Notice: could not update daily activity:", err);
+    console.warn("Notice: could not update daily activity in Firestore (synced to local cache):", err);
   }
 }
 
 /**
- * Get the last 7 days of learning activity for a user from Firestore.
+ * Get the last 7 days of learning activity for a user.
+ * Prioritizes local tracking for zero-latency, reconciled with Firestore records.
  * Returns an array of {day, minutes, label, highlight, hours} objects for the chart.
  */
 export async function getWeeklyActivityData(uid) {
@@ -69,19 +99,51 @@ export async function getWeeklyActivityData(uid) {
     days.push({ dateStr, dayLabel, minutes: 0 });
   }
 
+  // Read local baseline first
+  const localMap = getLocalDailyActivity(uid);
+  days.forEach((d) => {
+    if (localMap[d.dateStr]) {
+      d.minutes = localMap[d.dateStr];
+    }
+  });
+
+  // Reconcile with Firestore
   try {
     const fetchPromises = days.map((d) =>
       getDoc(doc(db, "users", uid, "dailyActivity", d.dateStr))
     );
     const snaps = await Promise.all(fetchPromises);
+    let updatedLocal = false;
     snaps.forEach((snap, i) => {
       if (snap.exists()) {
-        days[i].minutes = snap.data().minutes || 0;
+        const fsMinutes = snap.data().minutes || 0;
+        if (fsMinutes > days[i].minutes) {
+          days[i].minutes = fsMinutes;
+          localMap[days[i].dateStr] = fsMinutes;
+          updatedLocal = true;
+        } else if (days[i].minutes > fsMinutes) {
+          // Push higher local minutes to Firestore to keep them in sync
+          setDoc(doc(db, "users", uid, "dailyActivity", days[i].dateStr), {
+            date: days[i].dateStr,
+            minutes: days[i].minutes,
+            updatedAt: serverTimestamp(),
+          }, { merge: true }).catch(() => {});
+        }
+      } else if (days[i].minutes > 0) {
+        // Doc didn't exist in Firestore yet, write it now
+        setDoc(doc(db, "users", uid, "dailyActivity", days[i].dateStr), {
+          date: days[i].dateStr,
+          minutes: days[i].minutes,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        }, { merge: true }).catch(() => {});
       }
     });
+    if (updatedLocal) {
+      saveLocalDailyActivity(uid, localMap);
+    }
   } catch (err) {
-    console.warn("Notice: could not fetch weekly activity:", err);
-    return null;
+    console.warn("Notice: could not fetch weekly activity from Firestore, using local data:", err);
   }
 
   const maxMinutes = Math.max(...days.map((d) => d.minutes), 1);
@@ -93,7 +155,7 @@ export async function getWeeklyActivityData(uid) {
     const label = d.minutes === 0 ? "0m" : h > 0 ? `${h}h${m > 0 ? " " + m + "m" : ""}` : `${m}m`;
     return {
       day: d.dayLabel,
-      hours: Math.max(4, Math.round((d.minutes / Math.max(maxMinutes, 1)) * 100)),
+      hours: Math.max(6, Math.round((d.minutes / Math.max(maxMinutes, 1)) * 90)),
       minutes: d.minutes,
       label,
       highlight: i === maxIdx && d.minutes > 0,
@@ -306,6 +368,8 @@ export async function toggleLessonCompletion(uid, courseId, lessonId, fallbackTo
         progressPercent: newProgressPercent,
         updatedAt: serverTimestamp(),
       });
+      // Award 5 minutes of active learning for completing a lesson
+      incrementDailyActivity(uid, 5).catch(() => {});
     }
 
     return {
@@ -400,6 +464,9 @@ export async function submitAssignment(uid, courseIdOrAssignment, assignmentIdOr
       }
     }
 
+    // Award 10 minutes of active learning for assignment submission
+    incrementDailyActivity(uid, 10).catch(() => {});
+
     return { id: submissionDocId, ...payload };
   } catch (err) {
     console.error("Error submitting assignment to Firestore:", err);
@@ -474,6 +541,9 @@ export async function submitTest(uid, courseIdOrTestId, testIdOrAnswers, maybeAn
         console.warn("Notice: could not auto-mark test complete in enrollment:", enrErr);
       }
     }
+
+    // Award 15 minutes of active learning for test completion
+    incrementDailyActivity(uid, 15).catch(() => {});
 
     return { id: submissionDocId, ...payload };
   } catch (err) {
