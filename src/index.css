@@ -1986,4 +1986,123 @@ img {
   }
 }
 
+/* ── Incubator-Style Interactive Stacked Stat Cards ────────────────── */
+.incubator-stats-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-bottom: 28px;
+}
+
+.incubator-stat-card {
+  background: #FFFFFF;
+  border: 1px solid #E2E8F0;
+  border-radius: 20px;
+  padding: 24px 28px;
+  display: flex;
+  flex-direction: column;
+  justifyContent: space-between;
+  position: relative;
+  overflow: hidden;
+  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1),
+              box-shadow 0.25s cubic-bezier(0.16, 1, 0.3, 1),
+              border-color 0.25s cubic-bezier(0.16, 1, 0.3, 1),
+              background 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  cursor: pointer;
+}
+
+/* Card 1: Green Accent (Course Progress) */
+.incubator-stat-card.card-green {
+  border-color: #E2E8F0;
+}
+.incubator-stat-card.card-green:hover {
+  transform: translateY(-4px);
+  border-color: #34D399;
+  background: linear-gradient(145deg, #FFFFFF 65%, #F0FDF4 100%);
+  box-shadow: 0 16px 32px -8px rgba(16, 185, 129, 0.22), 0 4px 12px rgba(16, 185, 129, 0.08);
+}
+.incubator-stat-card.card-green:hover .stat-card-icon-box {
+  transform: scale(1.08);
+  box-shadow: 0 6px 16px rgba(16, 185, 129, 0.25);
+}
+
+/* Card 2: Amber Accent (Upcoming Classes) */
+.incubator-stat-card.card-amber {
+  border-color: #E2E8F0;
+}
+.incubator-stat-card.card-amber:hover {
+  transform: translateY(-4px);
+  border-color: #FBBF24;
+  background: linear-gradient(145deg, #FFFFFF 65%, #FFFBEB 100%);
+  box-shadow: 0 16px 32px -8px rgba(245, 158, 11, 0.22), 0 4px 12px rgba(245, 158, 11, 0.08);
+}
+.incubator-stat-card.card-amber:hover .stat-card-icon-box {
+  transform: scale(1.08);
+  box-shadow: 0 6px 16px rgba(245, 158, 11, 0.25);
+}
+
+/* Card 3: Indigo / Blue Accent (Assignments Pending) */
+.incubator-stat-card.card-indigo {
+  border-color: #E2E8F0;
+}
+.incubator-stat-card.card-indigo:hover {
+  transform: translateY(-4px);
+  border-color: #818CF8;
+  background: linear-gradient(145deg, #FFFFFF 65%, #EEF2FF 100%);
+  box-shadow: 0 16px 32px -8px rgba(99, 102, 241, 0.22), 0 4px 12px rgba(99, 102, 241, 0.08);
+}
+.incubator-stat-card.card-indigo:hover .stat-card-icon-box {
+  transform: scale(1.08);
+  box-shadow: 0 6px 16px rgba(99, 102, 241, 0.25);
+}
+
+.stat-card-icon-box {
+  width: 48px;
+  height: 48px;
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.25s ease, box-shadow 0.25s ease;
+}
+.stat-card-icon-box.icon-green {
+  background: #DCFCE7;
+  color: #10B981;
+}
+.stat-card-icon-box.icon-amber {
+  background: #FEF3C7;
+  color: #D97706;
+}
+.stat-card-icon-box.icon-indigo {
+  background: #EEF2FF;
+  color: #4F46E5;
+}
+
+.stat-card-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 14px;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  transition: all 0.2s ease;
+}
+.stat-card-badge.badge-green {
+  background: #F0FDF4;
+  border: 1px solid #86EFAC;
+  color: #16A34A;
+}
+.stat-card-badge.badge-amber {
+  background: #FFFBEB;
+  border: 1px solid #FDE68A;
+  color: #B45309;
+}
+.stat-card-badge.badge-indigo {
+  background: #EEF2FF;
+  border: 1px solid #C7D2FE;
+  color: #4338CA;
+}
+
 
