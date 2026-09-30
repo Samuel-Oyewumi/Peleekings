@@ -68,7 +68,6 @@ export default function CoursePage() {
   const [activeTab, setActiveTab] = useState("Overview");
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
-  const [isWishlisted, setIsWishlisted] = useState(false);
   const [toastMessage, setToastMessage] = useState("");
   const [showMobileCurriculum, setShowMobileCurriculum] = useState(false);
 
@@ -503,14 +502,6 @@ export default function CoursePage() {
     } finally {
       setPostingAnnouncement(false);
     }
-  }
-
-  function handleToggleWishlist() {
-    setIsWishlisted(prev => {
-      const next = !prev;
-      triggerToast(next ? "♥ Added to your wishlist!" : "Removed from wishlist");
-      return next;
-    });
   }
 
   async function handleAddComment(e) {
@@ -1430,13 +1421,6 @@ export default function CoursePage() {
                 {isEnrolling ? "Enrolling..." : "Enroll Now"}
               </button>
             )}
-
-            <button
-              className={`btn btn-outline btn-lg ${isWishlisted ? "btn-solid-purple" : ""}`}
-              onClick={handleToggleWishlist}
-            >
-              {isWishlisted ? "♥ In Wishlist" : "♡ Add to Wishlist"}
-            </button>
           </div>
         </div>
 
