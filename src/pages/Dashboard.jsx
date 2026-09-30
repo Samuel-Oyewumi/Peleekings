@@ -1024,20 +1024,16 @@ export default function Dashboard() {
                 <label style={{ fontSize: "0.825rem", fontWeight: 600, color: "var(--text-secondary)", display: "block", marginBottom: 6 }}>Email Address</label>
                 <input type="email" readOnly className="form-field-input" value={email} style={{ background: "#F8FAFC" }} />
               </div>
-              <div>
-                <label style={{ fontSize: "0.825rem", fontWeight: 600, color: "var(--text-secondary)", display: "block", marginBottom: 6 }}>Peleekings ID</label>
-                <input
-                  type="text"
-                  readOnly
-                  className="form-field-input"
-                  value={regCode || "—"}
-                  style={{ background: "var(--success-bg)", color: "var(--success-text)", fontWeight: 700, letterSpacing: "0.04em" }}
-                />
-              </div>
               <div className="profile-fields-row" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
                 <div>
-                  <label style={{ fontSize: "0.825rem", fontWeight: 600, color: "var(--text-secondary)", display: "block", marginBottom: 6 }}>Registration ID</label>
-                  <input type="text" readOnly className="form-field-input" value={regCode} style={{ background: "var(--success-bg)", color: "var(--success-text)", fontWeight: 700 }} />
+                  <label style={{ fontSize: "0.825rem", fontWeight: 600, color: "var(--text-secondary)", display: "block", marginBottom: 6 }}>User ID</label>
+                  <input
+                    type="text"
+                    readOnly
+                    className="form-field-input"
+                    value={regCode || "—"}
+                    style={{ background: "var(--success-bg)", color: "var(--success-text)", fontWeight: 700, letterSpacing: "0.04em" }}
+                  />
                 </div>
                 <div>
                   <label style={{ fontSize: "0.825rem", fontWeight: 600, color: "var(--text-secondary)", display: "block", marginBottom: 6 }}>
