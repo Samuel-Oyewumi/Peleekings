@@ -569,103 +569,64 @@ export default function Dashboard() {
               )}
             </div>
 
-            {/* ── INCUBATOR-STYLE STACKED STAT CARDS WITH HOVER EFFECTS ── */}
-            <div className="incubator-stats-stack">
+            {/* ── COMPACT INTERACTIVE STAT CARDS ── */}
+            <div className="dashboard-stats-grid">
               {/* Card 1: Course Progress (Green Accent) */}
               <div className="incubator-stat-card card-green" onClick={() => setActiveNav("my-courses")}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
                   <div className="stat-card-icon-box icon-green">
-                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                       <polyline points="23 6 13.5 15.5 8.5 10.5 1 18"></polyline>
                       <polyline points="17 6 23 6 23 12"></polyline>
                     </svg>
                   </div>
-                  <span className="stat-card-badge badge-green">
-                    {enrolledCourses.length > 0 && enrolledCourses[0].progress > 0 ? "LMS active" : "LMS offline"}
-                  </span>
                 </div>
                 <div>
-                  <div style={{ fontSize: "2.4rem", fontWeight: 800, color: "var(--text-primary)", lineHeight: 1, letterSpacing: "-0.02em" }}>
+                  <div style={{ fontSize: "1.75rem", fontWeight: 700, color: "var(--text-primary)", lineHeight: 1.1, letterSpacing: "-0.02em" }}>
                     {enrolledCourses.length > 0 ? `${enrolledCourses[0].progress}%` : "0%"}
                   </div>
-                  <div style={{ fontSize: "0.925rem", color: "var(--text-muted)", marginTop: 6, fontWeight: 500 }}>
+                  <div style={{ fontSize: "0.85rem", color: "var(--text-muted)", marginTop: 4, fontWeight: 500 }}>
                     Course progress
                   </div>
                 </div>
               </div>
 
-              {/* Card 2: Upcoming Classes (Amber Accent) */}
-              <div className="incubator-stat-card card-amber" onClick={() => triggerToast("Live cohort broadcast scheduled for tomorrow at 8:00 pm WAT.")}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
+              {/* Card 2: Enrolled Courses (Amber Accent) */}
+              <div className="incubator-stat-card card-amber" onClick={() => setActiveNav("my-courses")}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
                   <div className="stat-card-icon-box icon-amber">
-                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                      <circle cx="12" cy="12" r="10"></circle>
-                      <polyline points="12 6 12 12 16 14"></polyline>
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
+                      <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
                     </svg>
                   </div>
-                  <span className="stat-card-badge badge-amber">
-                    Tomorrow, 8:00 pm WAT
-                  </span>
                 </div>
                 <div>
-                  <div style={{ fontSize: "2.4rem", fontWeight: 800, color: "var(--text-primary)", lineHeight: 1, letterSpacing: "-0.02em" }}>
-                    5
+                  <div style={{ fontSize: "1.75rem", fontWeight: 700, color: "var(--text-primary)", lineHeight: 1.1, letterSpacing: "-0.02em" }}>
+                    {enrolledCourses.length}
                   </div>
-                  <div style={{ fontSize: "0.925rem", color: "var(--text-muted)", marginTop: 6, fontWeight: 500 }}>
-                    Upcoming classes
+                  <div style={{ fontSize: "0.85rem", color: "var(--text-muted)", marginTop: 4, fontWeight: 500 }}>
+                    {enrolledCourses.length === 1 ? "Course enrolled" : "Courses enrolled"}
                   </div>
                 </div>
               </div>
 
-              {/* Card 3: Assignments Pending (Indigo Accent + Tutor Avatar) */}
+              {/* Card 3: Assignments Pending (Indigo Accent) */}
               <div className="incubator-stat-card card-indigo" onClick={() => setActiveNav("assignments")}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
                   <div className="stat-card-icon-box icon-indigo">
-                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                       <circle cx="12" cy="12" r="10"></circle>
                       <path d="M8 12l2.5 2.5L16 9"></path>
                     </svg>
                   </div>
-                  <span className="stat-card-badge badge-indigo">
-                    Due
-                  </span>
                 </div>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end" }}>
-                  <div>
-                    <div style={{ fontSize: "2.4rem", fontWeight: 800, color: "var(--text-primary)", lineHeight: 1, letterSpacing: "-0.02em" }}>
-                      {DEFAULT_ASSIGNMENTS.length - Object.keys(userSubmissions).length}
-                    </div>
-                    <div style={{ fontSize: "0.925rem", color: "var(--text-muted)", marginTop: 6, fontWeight: 500 }}>
-                      Assignments pending
-                    </div>
+                <div>
+                  <div style={{ fontSize: "1.75rem", fontWeight: 700, color: "var(--text-primary)", lineHeight: 1.1, letterSpacing: "-0.02em" }}>
+                    {DEFAULT_ASSIGNMENTS.length - Object.keys(userSubmissions).length}
                   </div>
-                  <div style={{ position: "relative", width: 48, height: 48, flexShrink: 0 }} title="Assigned Tutor Online">
-                    <img
-                      src="https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=120&auto=format&fit=crop&q=80"
-                      alt="Tutor"
-                      style={{
-                        width: 48,
-                        height: 48,
-                        borderRadius: "50%",
-                        border: "2.5px solid #FFFFFF",
-                        boxShadow: "0 4px 12px rgba(0,0,0,0.12)",
-                        objectFit: "cover",
-                        display: "block"
-                      }}
-                    />
-                    <span
-                      style={{
-                        position: "absolute",
-                        top: -2,
-                        right: -2,
-                        width: 14,
-                        height: 14,
-                        borderRadius: "50%",
-                        background: "#22C55E",
-                        border: "2.5px solid #FFFFFF",
-                        boxShadow: "0 0 0 1px rgba(34, 197, 94, 0.4)"
-                      }}
-                    />
+                  <div style={{ fontSize: "0.85rem", color: "var(--text-muted)", marginTop: 4, fontWeight: 500 }}>
+                    Assignments pending
                   </div>
                 </div>
               </div>
