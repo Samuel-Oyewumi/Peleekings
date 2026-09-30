@@ -3,6 +3,26 @@ import { Link, useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { getUserActivity, submitAssignment, getUserEnrollments, enrollInCourse, getWeeklyActivityData, incrementDailyActivity } from "../contexts/userActivity";
 import { COURSES_CATALOG } from "../data/courses";
+import { doc, setDoc } from "firebase/firestore";
+import { db } from "../firebase";
+
+function computeUserRegCode(profile, uid) {
+  if (profile?.regNumber && profile.regNumber !== "Pending assignment") {
+    return profile.regNumber;
+  }
+  const nameParts = (profile?.fullName || profile?.displayName || "Learner").trim().split(/\s+/);
+  const sInit = (profile?.surname?.[0] || (nameParts.length > 1 ? nameParts[0][0] : "P")).toUpperCase();
+  const fInit = (profile?.firstName?.[0] || (nameParts.length > 1 ? nameParts[1][0] : "K")).toUpperCase();
+
+  if (profile?.studentType === "corper" && profile?.nyscStateCode) {
+    const raw = profile.nyscStateCode.replace(/\D/g, "");
+    if (raw.length >= 4) return `${sInit}${fInit}${raw.slice(-4)}`;
+  }
+
+  const seedStr = uid || profile?.email || "peleekings";
+  const num = 1000 + Math.abs(seedStr.split("").reduce((acc, c) => acc + c.charCodeAt(0) * 19, 0) % 9000);
+  return profile?.studentType === "corper" ? `${sInit}${fInit}${num}` : `${num}${fInit}${sInit}`;
+}
 
 export default function Dashboard() {
   const { currentUser, userProfile, logout } = useAuth();
@@ -35,9 +55,19 @@ export default function Dashboard() {
   const isNonCorper = userProfile?.studentType === "non_corper";
   const userName = userProfile?.fullName || currentUser?.displayName || currentUser?.email?.split("@")[0] || "Learner";
   const firstName = userProfile?.firstName || (userName.split(" ").length > 1 ? userName.split(" ")[0] : userName) || "Learner";
-  const regCode = userProfile?.regNumber || "Pending assignment";
+  const regCode = computeUserRegCode(userProfile, currentUser?.uid);
   const email = currentUser?.email || userProfile?.email || "";
   const nyscCode = isNonCorper ? "Not Applicable (Non-Corper)" : (userProfile?.nyscStateCode || "Not provided");
+
+  // Sync valid regNumber to Firestore if missing or was set to 'Pending assignment'
+  useEffect(() => {
+    if (currentUser?.uid && (!userProfile?.regNumber || userProfile.regNumber === "Pending assignment")) {
+      const generated = computeUserRegCode(userProfile, currentUser.uid);
+      if (generated) {
+        setDoc(doc(db, "users", currentUser.uid), { regNumber: generated }, { merge: true }).catch(() => {});
+      }
+    }
+  }, [currentUser?.uid, userProfile?.regNumber]);
 
   function triggerToast(msg) {
     setToastMessage(msg);
@@ -315,9 +345,11 @@ export default function Dashboard() {
               <span className={`pill-badge ${userProfile?.studentType === "non_corper" ? "pill-creative" : "pill-tech"}`} style={{ padding: "2px 8px", fontSize: "0.68rem" }}>
                 {userProfile?.studentType === "non_corper" ? "Non-Corper" : "Corper"}
               </span>
-              <span style={{ fontSize: "0.75rem", color: "var(--text-muted)", fontWeight: 600 }}>
-                {regCode}
-              </span>
+              {regCode && regCode !== "Pending assignment" ? (
+                <span style={{ fontSize: "0.75rem", color: "var(--text-muted)", fontWeight: 600 }}>
+                  {regCode}
+                </span>
+              ) : null}
             </div>
           </div>
         </div>

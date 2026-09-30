@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useParams, useNavigate, useLocation, Link } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { COURSES_CATALOG } from "../data/courses";
+import { getCurriculumForCourse } from "../data/courseCurricula";
 import { collection, query, orderBy, getDocs, addDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "../firebase";
 import {
@@ -16,35 +17,6 @@ import {
 } from "../contexts/userActivity";
 import { getResources, uploadResource } from "../contexts/resourcesService";
 
-const COURSE_MODULES = [
-  {
-    id: "m1",
-    title: "Module 01 - Understanding AI",
-    lessons: [
-      { id: "l1", title: "1. What is Artificial Intelligence", duration: "10 min", completed: false, type: "video" },
-      { id: "l2", title: "2. History of AI & Machine Learning", duration: "15 min", completed: false, type: "video" },
-      { id: "l3", title: "3. AI in the Real World", duration: "18 min", completed: false, type: "reading" },
-    ]
-  },
-  {
-    id: "m2",
-    title: "Module 02 - AI Tools",
-    lessons: [
-      { id: "l4", title: "4. Popular AI Tools Overview", duration: "14 min", completed: false, type: "video" },
-      { id: "l5", title: "5. Using ChatGPT for Work", duration: "12 min", completed: false, type: "video" },
-      { id: "l6", title: "6. Automation with Zapier & Make", duration: "25 min", completed: false, locked: false, type: "assignment" },
-    ]
-  },
-  {
-    id: "m3",
-    title: "Module 03 - Automation",
-    lessons: [
-      { id: "l7", title: "7. Workflow Design Fundamentals", duration: "20 min", completed: false, locked: false, type: "video" },
-      { id: "l8", title: "8. Capstone Project: End-to-End Pipeline", duration: "35 min", completed: false, locked: false, type: "test" },
-    ]
-  }
-];
-
 export default function CoursePage() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -52,6 +24,7 @@ export default function CoursePage() {
   const { currentUser, userProfile } = useAuth();
 
   const courseData = COURSES_CATALOG.find(c => c.id === id) || COURSES_CATALOG[0];
+  const courseCurriculum = getCurriculumForCourse(courseData.id);
 
   // Firestore-backed enrollment state (source of truth)
   const [enrollment, setEnrollment] = useState(null);
@@ -62,9 +35,9 @@ export default function CoursePage() {
   const [selectedExperience, setSelectedExperience] = useState("online"); // "online" or "hands-on"
   const [isEnrolling, setIsEnrolling] = useState(false);
   
-  // Classroom lesson state with saved progress
-  const [modules, setModules] = useState(COURSE_MODULES);
-  const [activeLessonId, setActiveLessonId] = useState("l1");
+  // Classroom lesson state with saved progress initialized dynamically per course
+  const [modules, setModules] = useState(() => courseCurriculum.modules);
+  const [activeLessonId, setActiveLessonId] = useState(() => courseCurriculum.modules[0]?.lessons[0]?.id || "l1");
   const [activeTab, setActiveTab] = useState("Overview");
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
@@ -92,6 +65,19 @@ export default function CoursePage() {
   // Test engine state (one question at a time)
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [testScore, setTestScore] = useState(null);
+
+  // Synchronize curriculum and lesson selection when the route's course ID changes
+  useEffect(() => {
+    const curr = getCurriculumForCourse(courseData.id);
+    const initialLessonId = curr.modules[0]?.lessons[0]?.id || "l1";
+    setActiveLessonId(initialLessonId);
+    setModules(curr.modules);
+    setCurrentQuestionIndex(0);
+    setTestScore(null);
+    setTestAnswers({});
+    setCurrentSubmission(null);
+    setCurrentTestSubmission(null);
+  }, [courseData.id]);
 
   useEffect(() => {
     async function loadAnnouncements() {
@@ -311,21 +297,26 @@ export default function CoursePage() {
     setTimeout(() => setToastMessage(""), 3500);
   }
 
-  // Find active lesson
+  // Find active lesson & parent module
   let currentLesson = null;
+  let currentModule = null;
   for (const m of modules) {
     const found = m.lessons.find(l => l.id === activeLessonId);
     if (found) {
       currentLesson = found;
+      currentModule = m;
       break;
     }
   }
-  if (!currentLesson) currentLesson = modules[0].lessons[0];
+  if (!currentLesson) {
+    currentLesson = modules[0]?.lessons[0] || { id: "l1", title: "Introduction", duration: "10 min", completed: false, type: "video" };
+    currentModule = modules[0] || null;
+  }
 
   // Calculate overall progress
   const allLessons = modules.flatMap(m => m.lessons);
   const completedCount = allLessons.filter(l => l.completed).length;
-  const progressPercent = Math.round((completedCount / allLessons.length) * 100);
+  const progressPercent = allLessons.length > 0 ? Math.round((completedCount / allLessons.length) * 100) : 0;
 
   async function toggleLessonComplete(lessonId) {
     if (!isEnrolled || !currentUser?.uid) {
@@ -417,38 +408,7 @@ export default function CoursePage() {
     }
   }
 
-  const TEST_QUESTIONS = [
-    {
-      question: "Which prompt technique ensures deterministic JSON output from LLMs?",
-      options: [
-        "Few-shot prompting with explicit JSON schema examples",
-        "Zero-shot with maximum temperature setting",
-        "Leaving the prompt open-ended without structure",
-        "Using conversational greetings repeatedly"
-      ],
-      correctIndex: 0
-    },
-    {
-      question: "What is the primary role of a webhook in an automated pipeline?",
-      options: [
-        "To store video files in a cloud archive",
-        "To send real-time event notifications and payload data between applications",
-        "To reduce internet bandwidth consumption on mobile devices",
-        "To replace database indexes"
-      ],
-      correctIndex: 1
-    },
-    {
-      question: "Which approach best protects sensitive API keys when deploying automated bots?",
-      options: [
-        "Committing them directly to a public GitHub repository",
-        "Using server-side environment variables and secrets managers",
-        "Embedding them in client-side HTML tags",
-        "Sending them via unencrypted emails"
-      ],
-      correctIndex: 1
-    }
-  ];
+  const TEST_QUESTIONS = courseCurriculum.quizQuestions || [];
 
   async function handleTestSubmit(e) {
     if (e) e.preventDefault();
@@ -788,7 +748,7 @@ export default function CoursePage() {
                       {currentLesson.title}
                     </h1>
                     <div style={{ fontSize: "0.85rem", color: "var(--text-muted)" }}>
-                      Module 02 &bull; {currentLesson.duration} &bull; Self-paced learning
+                      {currentModule?.title || "Classroom"} &bull; {currentLesson.duration} &bull; Self-paced learning
                     </div>
                   </div>
 
@@ -838,25 +798,25 @@ export default function CoursePage() {
                   {activeTab === "Overview" && (
                     <div>
                       <p style={{ marginBottom: 14 }}>
-                        In this lesson, you will learn how to effectively leverage modern AI models to automate everyday business tasks, generate structured output, and orchestrate automated workflows with zero coding required.
+                        {courseCurriculum.overview?.description}
                       </p>
                       <h4 style={{ fontSize: "1.1rem", fontWeight: 700, color: "var(--text-primary)", margin: "16px 0 8px" }}>
                         Key Learning Objectives:
                       </h4>
                       <ul style={{ paddingLeft: 20, display: "flex", flexDirection: "column", gap: 6, marginBottom: 20 }}>
-                        <li>Understanding zero-shot and few-shot prompt chaining</li>
-                        <li>Formatting AI output directly into JSON, tables, and Markdown</li>
-                        <li>Connecting conversational agents to real-world webhook automation</li>
+                        {(courseCurriculum.overview?.objectives || []).map((obj, i) => (
+                          <li key={i}>{obj}</li>
+                        ))}
                       </ul>
 
                       {/* Interactive Firestore Assignment Submission */}
                       {currentLesson.type === "assignment" && (
                         <div style={{ background: "#F8FAFC", border: "1px solid var(--border-light)", borderRadius: "var(--radius-md)", padding: 24, marginTop: 24 }}>
                           <h4 style={{ fontSize: "1.05rem", fontWeight: 700, marginBottom: 8 }}>
-                            📝 Practical Assignment: Prompt Chain & Zapier Pipeline
+                            {courseCurriculum.assignment?.title || "📝 Practical Assignment"}
                           </h4>
                           <p style={{ fontSize: "0.875rem", color: "var(--text-secondary)", marginBottom: 16 }}>
-                            Submit your Zapier webhook link or paste your multi-step JSON prompt template below for instructor review.
+                            {courseCurriculum.assignment?.description || "Submit your practical deliverables below for instructor review."}
                           </p>
 
                           {currentSubmission ? (
@@ -882,7 +842,7 @@ export default function CoursePage() {
                                 required
                                 value={assignmentContent}
                                 onChange={(e) => setAssignmentContent(e.target.value)}
-                                placeholder="Paste your assignment deliverables or solution notes here..."
+                                placeholder={courseCurriculum.assignment?.placeholder || "Paste your assignment deliverables or solution notes here..."}
                                 style={{ width: "100%", padding: 12, borderRadius: "var(--radius-sm)", border: "1px solid var(--border-light)", fontSize: "0.875rem", fontFamily: "inherit", outline: "none", marginBottom: 12 }}
                               />
                               <button type="submit" disabled={assignmentSubmitting} className="btn btn-solid-dark btn-sm">
@@ -1023,11 +983,11 @@ export default function CoursePage() {
                     <div style={{ background: "#FFFFFF", border: "1px solid var(--border-light)", borderRadius: "var(--radius-md)", padding: 20 }}>
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
                         <div style={{ fontWeight: 700, color: "var(--text-primary)" }}>Course Notes: {currentLesson.title}</div>
-                        <button className="btn btn-outline btn-sm" onClick={() => triggerDownload("Course_Notes_Module02.pdf")}>
+                        <button className="btn btn-outline btn-sm" onClick={() => triggerDownload(courseCurriculum.notesFileName)}>
                           Download PDF &darr;
                         </button>
                       </div>
-                      <p>Comprehensive lecture notes summarizing the concepts covered in this module, including cheatsheets, prompt patterns, and best practices.</p>
+                      <p>Comprehensive lecture notes summarizing the concepts covered in this module for {courseData.title}, including cheatsheets, reference architectures, and industry best practices.</p>
                     </div>
                   )}
 
