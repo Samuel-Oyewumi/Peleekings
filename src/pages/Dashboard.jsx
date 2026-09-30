@@ -369,8 +369,8 @@ export default function Dashboard() {
         </div>
       </aside>
 
-      {/* ── Main Dashboard Content (Screen 5) ───────────────────────── */}
-      <main className="dashboard-main-area">
+      {/* ── Main Dashboard Content ─────────────────────────────────── */}
+      <main className="dashboard-main-area" style={{ paddingBottom: 80 }}>
         {/* Top Header / Greeting */}
         <div className="dashboard-greeting-row">
           <div>
@@ -381,7 +381,7 @@ export default function Dashboard() {
                 onClick={() => setShowMobileSidebar(prev => !prev)}
                 aria-label="Open menu"
               >
-                ☰ Menu
+                ☰
               </button>
               <h1 style={{ fontSize: "1.9rem", fontWeight: 800, marginBottom: 4 }}>
                 Good morning, {firstName} &#128075;
@@ -396,33 +396,6 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* ── Mobile Quick Tabs Strip ── */}
-        <div className="dashboard-mobile-quick-nav">
-          {[
-            { id: "dashboard", label: "Overview", icon: "📊" },
-            { id: "my-courses", label: "My Courses", icon: "📚" },
-            { id: "browse-courses", label: "Browse", icon: "🔍" },
-            { id: "assignments", label: "Assignments", icon: "📝" },
-          ].map(item => (
-            <button
-              key={item.id}
-              type="button"
-              className={`dashboard-mobile-quick-pill ${activeNav === item.id ? "active" : ""}`}
-              onClick={() => setActiveNav(item.id)}
-            >
-              <span>{item.icon}</span>
-              <span>{item.label}</span>
-            </button>
-          ))}
-          <button
-            type="button"
-            className="dashboard-mobile-quick-pill"
-            onClick={() => setShowMobileSidebar(true)}
-          >
-            <span>☰</span>
-            <span>More</span>
-          </button>
-        </div>
 
         {/* Stage 6: Dismissible Tutor Apply Banner */}
         {showTutorBanner && (
@@ -661,14 +634,14 @@ export default function Dashboard() {
               <div style={{ fontSize: "0.75rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--text-muted)", marginBottom: 14 }}>
                 Quick Access
               </div>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 14 }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
                 {[
-                  { icon: "🎬", label: "My Courses", sub: "Resume your learning", color: "#FEE2E2", iconColor: "#EF4444", nav: "my-courses" },
-                  { icon: "📝", label: "Assignments", sub: "View pending submissions", color: "#FEF3C7", iconColor: "#D97706", nav: "assignments" },
-                  { icon: "⏱", label: "Tests", sub: "Check scheduled tests", color: "#EEF2FF", iconColor: "var(--primary-learner)", nav: "tests" },
-                  { icon: "📄", label: "Notes", sub: "Course materials", color: "#F0FDF4", iconColor: "#16A34A", nav: "notes" },
-                  { icon: "📢", label: "Announcements", sub: "Latest from instructors", color: "#FFF7ED", iconColor: "#EA580C", nav: "announcements" },
-                  { icon: "🎓", label: "Certificates", sub: "View achievements", color: "#F5F3FF", iconColor: "#7C3AED", nav: "certificates" },
+                  { icon: "🎬", label: "My Courses", sub: "Resume your learning", color: "#FEE2E2", nav: "my-courses" },
+                  { icon: "📝", label: "Assignments", sub: "View pending submissions", color: "#FEF3C7", nav: "assignments" },
+                  { icon: "📄", label: "Notes & Resources", sub: "Course materials and tools", color: "#EEF2FF", nav: "notes" },
+                  { icon: "⏱", label: "Tests", sub: "Check scheduled tests", color: "#F0FDF4", nav: "tests" },
+                  { icon: "📢", label: "Announcements", sub: "Latest from instructors", color: "#FFF7ED", nav: "announcements" },
+                  { icon: "🎓", label: "Certificates", sub: "View your achievements", color: "#F5F3FF", nav: "certificates" },
                 ].map(item => (
                   <button
                     key={item.nav}
@@ -677,24 +650,26 @@ export default function Dashboard() {
                       background: "#FFFFFF",
                       border: "1px solid var(--border-light)",
                       borderRadius: "var(--radius-md)",
-                      padding: "16px 18px",
+                      padding: "16px 20px",
                       textAlign: "left",
                       cursor: "pointer",
                       display: "flex",
                       alignItems: "center",
-                      gap: 14,
-                      transition: "box-shadow 0.15s ease, transform 0.15s ease",
+                      gap: 16,
+                      width: "100%",
+                      transition: "box-shadow 0.15s ease",
                     }}
-                    onMouseEnter={e => { e.currentTarget.style.boxShadow = "0 4px 16px rgba(0,0,0,0.08)"; e.currentTarget.style.transform = "translateY(-1px)"; }}
-                    onMouseLeave={e => { e.currentTarget.style.boxShadow = "none"; e.currentTarget.style.transform = "none"; }}
+                    onMouseEnter={e => { e.currentTarget.style.boxShadow = "0 4px 16px rgba(0,0,0,0.07)"; }}
+                    onMouseLeave={e => { e.currentTarget.style.boxShadow = "none"; }}
                   >
-                    <div style={{ width: 40, height: 40, borderRadius: 10, background: item.color, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.1rem", flexShrink: 0 }}>
+                    <div style={{ width: 48, height: 48, borderRadius: 12, background: item.color, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.3rem", flexShrink: 0 }}>
                       {item.icon}
                     </div>
-                    <div>
-                      <div style={{ fontWeight: 700, fontSize: "0.875rem", color: "var(--text-primary)", marginBottom: 2 }}>{item.label}</div>
-                      <div style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>{item.sub}</div>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontWeight: 700, fontSize: "0.95rem", color: "var(--text-primary)", marginBottom: 2 }}>{item.label}</div>
+                      <div style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>{item.sub}</div>
                     </div>
+                    <span style={{ fontSize: "1rem", color: "var(--text-muted)" }}>›</span>
                   </button>
                 ))}
               </div>
@@ -1249,6 +1224,66 @@ export default function Dashboard() {
           </div>
         )}
       </main>
+
+      {/* ── Fixed Bottom Nav Bar (mobile) ── */}
+      <nav style={{
+        position: "fixed",
+        bottom: 0,
+        left: 0,
+        right: 0,
+        height: 64,
+        background: "#FFFFFF",
+        borderTop: "1px solid var(--border-light)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-around",
+        zIndex: 300,
+        paddingBottom: "env(safe-area-inset-bottom, 0px)",
+      }}>
+        {[
+          { id: "dashboard", label: "Dashboard", icon: (
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+          )},
+          { id: "my-courses", label: "Courses", icon: (
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
+          )},
+          { id: "browse-courses", label: "Browse", icon: (
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          )},
+          { id: "assignments", label: "Assignments", icon: (
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+          )},
+          { id: "more", label: "More", icon: (
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+          ), action: () => setShowMobileSidebar(true) },
+        ].map(item => {
+          const isActive = activeNav === item.id;
+          return (
+            <button
+              key={item.id}
+              onClick={() => item.action ? item.action() : setActiveNav(item.id)}
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                gap: 3,
+                background: "none",
+                border: "none",
+                cursor: "pointer",
+                padding: "6px 12px",
+                color: isActive ? "var(--primary-learner)" : "#94A3B8",
+                fontWeight: isActive ? 700 : 500,
+                fontSize: "0.68rem",
+                transition: "color 0.15s ease",
+                minWidth: 52,
+              }}
+            >
+              {item.icon}
+              <span>{item.label}</span>
+            </button>
+          );
+        })}
+      </nav>
     </div>
   );
 }
