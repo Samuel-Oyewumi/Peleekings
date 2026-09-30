@@ -465,6 +465,7 @@ export default function Navbar() {
                     zIndex: 250,
                   }}
                 >
+                  {/* Profile info */}
                   <div style={{ padding: "8px 16px 12px", borderBottom: "1px solid var(--border-subtle)" }}>
                     <div style={{ fontWeight: 800, fontSize: "0.95rem", color: "var(--text-primary)" }}>
                       {currentUser?.displayName || userProfile?.fullName || "Learner"}
@@ -484,100 +485,13 @@ export default function Navbar() {
                     </div>
                   </div>
 
-                  <Link
-                    to="/dashboard"
-                    onClick={() => setShowMenu(false)}
-                    style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 16px", fontSize: "0.875rem", color: "var(--text-secondary)", fontWeight: 500 }}
-                  >
-                    <span>📊</span> Learner Dashboard
-                  </Link>
-
-                  {userProfile?.role === "instructor" || userProfile?.role === "tutor" ? (
-                    <Link
-                      to="/teach-portal"
-                      onClick={() => setShowMenu(false)}
-                      style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 16px", fontSize: "0.875rem", color: "var(--text-secondary)", fontWeight: 500 }}
-                    >
-                      <span>💼</span> Teaching Portal
-                    </Link>
-                  ) : (
-                    <Link
-                      to="/teach"
-                      onClick={() => setShowMenu(false)}
-                      style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 16px", fontSize: "0.875rem", color: "var(--text-secondary)", fontWeight: 500 }}
-                    >
-                      <span>💼</span> Teach on Peleekings
-                    </Link>
-                  )}
-
-                  {userProfile?.role === "admin" && (
-                    <>
-                      <Link
-                        to="/teach-portal"
-                        onClick={() => setShowMenu(false)}
-                        style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 16px", fontSize: "0.875rem", color: "var(--text-secondary)", fontWeight: 500 }}
-                      >
-                        <span>💼</span> Teaching Portal
-                      </Link>
-                      <Link
-                        to="/admin"
-                        onClick={() => setShowMenu(false)}
-                        style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 16px", fontSize: "0.875rem", color: "var(--primary-learner)", fontWeight: 700 }}
-                      >
-                        <span>⚙️</span> Admin Dashboard
-                      </Link>
-                    </>
-                  )}
-
-                  {/* Mobile Quick Navigation Links inside Profile Menu */}
-                  <div style={{ borderTop: "1px solid var(--border-subtle)", margin: "6px 0", paddingTop: 6 }}>
-                    <Link
-                      to="/"
-                      onClick={() => {
-                        setShowMenu(false);
-                        document.getElementById("courses-catalog-section")?.scrollIntoView({ behavior: "smooth" });
-                      }}
-                      style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 16px", fontSize: "0.85rem", color: "var(--text-secondary)" }}
-                    >
-                      <span>📚</span> Courses
-                    </Link>
-                    <Link
-                      to="/"
-                      onClick={() => {
-                        setShowMenu(false);
-                        document.getElementById("learning-paths-section")?.scrollIntoView({ behavior: "smooth" });
-                      }}
-                      style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 16px", fontSize: "0.85rem", color: "var(--text-secondary)" }}
-                    >
-                      <span>🧭</span> Learning Paths
-                    </Link>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setShowMenu(false);
-                        setShowResourcesModal(true);
-                      }}
-                      style={{ width: "100%", textAlign: "left", display: "flex", alignItems: "center", gap: 10, padding: "8px 16px", fontSize: "0.85rem", color: "var(--text-secondary)", background: "none", border: "none", cursor: "pointer", font: "inherit" }}
-                    >
-                      <span>📁</span> Resources
-                    </button>
-                    <Link
-                      to="/about"
-                      onClick={() => setShowMenu(false)}
-                      style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 16px", fontSize: "0.85rem", color: "var(--text-secondary)" }}
-                    >
-                      <span>ℹ️</span> About Us
-                    </Link>
-                  </div>
-
-                  <div style={{ borderTop: "1px solid var(--border-subtle)", margin: "6px 0" }} />
-
+                  {/* Log Out */}
                   <button
                     onClick={handleLogout}
                     style={{
                       width: "100%",
                       textAlign: "left",
-                      padding: "8px 16px",
+                      padding: "10px 16px",
                       fontSize: "0.875rem",
                       color: "#DC2626",
                       display: "flex",
