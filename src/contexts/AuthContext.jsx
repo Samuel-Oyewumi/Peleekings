@@ -62,8 +62,12 @@ export function AuthProvider({ children }) {
     }
   });
 
-  // Loading flag ensures permission checks wait for Firestore re-verification on load
-  const [loading, setLoading] = useState(true);
+  // If a cached profile exists, start as NOT loading — page renders instantly.
+  // onAuthStateChanged will silently verify and correct state in the background.
+  const hasCachedProfile = (() => {
+    try { return !!localStorage.getItem("peleekings_user_profile_cache"); } catch { return false; }
+  })();
+  const [loading, setLoading] = useState(!hasCachedProfile);
 
   // Tracks whether login()/signup() just freshly fetched the Firestore profile.
   // When true, onAuthStateChanged skips the redundant second getDoc call.
@@ -328,48 +332,50 @@ export function AuthProvider({ children }) {
           return;
         }
 
-        try {
-          const docSnap = await getDoc(doc(db, "users", user.uid));
-          if (docSnap.exists()) {
-            const verifiedProfile = docSnap.data();
-            if (user.email?.toLowerCase() === "admin@peleekings.com") {
-              verifiedProfile.role = "admin";
-            }
-            setUserProfile(verifiedProfile);
-            localStorage.setItem("peleekings_user_profile_cache", JSON.stringify(verifiedProfile));
-          } else {
-            if (user.email?.toLowerCase() === "admin@peleekings.com") {
-              const adminProfile = {
-                uid: user.uid,
-                email: user.email,
-                displayName: user.displayName || "Admin",
-                fullName: user.displayName || "Admin",
-                role: "admin",
-                status: "active",
-              };
-              setUserProfile(adminProfile);
-              localStorage.setItem("peleekings_user_profile_cache", JSON.stringify(adminProfile));
+        // Always resolve loading immediately so the page is not blocked.
+        // Then do the Firestore verification in the background.
+        setLoading(false);
+
+        // Background: silently verify and refresh profile from Firestore
+        getDoc(doc(db, "users", user.uid))
+          .then((docSnap) => {
+            if (docSnap.exists()) {
+              const verifiedProfile = docSnap.data();
+              if (user.email?.toLowerCase() === "admin@peleekings.com") {
+                verifiedProfile.role = "admin";
+              }
+              setUserProfile(verifiedProfile);
+              localStorage.setItem("peleekings_user_profile_cache", JSON.stringify(verifiedProfile));
             } else {
-              // Profile does not exist in Firestore; do not guess or trust cached role
-              setUserProfile(null);
-              localStorage.removeItem("peleekings_user_profile_cache");
+              if (user.email?.toLowerCase() === "admin@peleekings.com") {
+                const adminProfile = {
+                  uid: user.uid,
+                  email: user.email,
+                  displayName: user.displayName || "Admin",
+                  fullName: user.displayName || "Admin",
+                  role: "admin",
+                  status: "active",
+                };
+                setUserProfile(adminProfile);
+                localStorage.setItem("peleekings_user_profile_cache", JSON.stringify(adminProfile));
+              } else {
+                // No Firestore doc — clear cache so stale data isn't trusted
+                setUserProfile(null);
+                localStorage.removeItem("peleekings_user_profile_cache");
+              }
             }
-          }
-        } catch (err) {
-          console.warn("Notice: could not re-verify profile against Firestore (offline/slow):", err);
-          try {
-            const cached = localStorage.getItem("peleekings_user_profile_cache");
-            if (cached) {
-              setUserProfile(JSON.parse(cached));
-            }
-          } catch {}
-        }
+          })
+          .catch((err) => {
+            // Network/offline — keep cached profile as fallback, don't clear
+            console.warn("Background profile re-verify notice (offline/slow):", err);
+          });
       } else {
+        // Signed out — clear everything and unblock loading
         setCurrentUser(null);
         setUserProfile(null);
         localStorage.removeItem("peleekings_user_profile_cache");
+        setLoading(false);
       }
-      setLoading(false);
     });
 
     return unsubscribe;

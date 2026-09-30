@@ -5,7 +5,8 @@ export default function ProtectedRoute({ children, adminOnly = false }) {
   const { currentUser, userProfile, loading } = useAuth();
   const location = useLocation();
 
-  // If initial auth or Firestore profile re-verification is in progress, wait
+  // Only block render on first-ever visits (no cached session).
+  // Returning users: loading starts as false, page renders immediately.
   if (loading) {
     return (
       <div
@@ -32,19 +33,29 @@ export default function ProtectedRoute({ children, adminOnly = false }) {
           }}
         />
         <p style={{ fontSize: "0.875rem", fontWeight: 500 }}>
-          Loading...
+          Signing you in…
         </p>
         <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
       </div>
     );
   }
 
-  // Must have an active, verified Firebase Auth session
+  // No active session — redirect to auth
   if (!currentUser) {
-    return <Navigate to="/auth" state={{ from: location.pathname }} replace />;
+    // If we have a cached profile but currentUser isn't set yet (onAuthStateChanged
+    // hasn't fired), give Firebase a moment before redirecting.
+    const hasCachedProfile = (() => {
+      try { return !!localStorage.getItem("peleekings_user_profile_cache"); } catch { return false; }
+    })();
+    if (hasCachedProfile) {
+      // Render children optimistically — onAuthStateChanged will correct if session expired
+      // This prevents a flash-redirect on page reload for logged-in users
+    } else {
+      return <Navigate to="/auth" state={{ from: location.pathname }} replace />;
+    }
   }
 
-  // adminOnly: checks userProfile.role === "admin" from the Firestore-sourced profile or admin email
+  // adminOnly guard
   const isAdmin = userProfile?.role === "admin" || currentUser?.email?.toLowerCase() === "admin@peleekings.com";
   if (adminOnly && !isAdmin) {
     return <Navigate to="/dashboard" replace />;
