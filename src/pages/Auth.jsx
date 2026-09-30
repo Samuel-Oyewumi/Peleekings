@@ -72,6 +72,8 @@ export default function Auth() {
           throw new Error("Passwords do not match. Please verify both passwords.");
         }
 
+        const cleanEmail = formData.email.trim().toLowerCase();
+        const isAdmin = cleanEmail === "admin@peleekings.com";
         const fullName = `${formData.surname.trim()} ${formData.firstName.trim()}`;
         const customProfile = {
           fullName,
@@ -81,36 +83,40 @@ export default function Auth() {
           phoneNumber: formData.phoneNumber.trim() || "",
           studentType,
           nyscStateCode: studentType === "corper" ? formData.nyscStateCode.trim() : null,
-          submittedRole: roleTab === "tutor" ? "tutor" : "student",
+          submittedRole: isAdmin ? "admin" : (roleTab === "tutor" ? "tutor" : "student"),
         };
 
-        const authRes = await signup(formData.email.trim(), formData.password, fullName, customProfile);
+        const authRes = await signup(cleanEmail, formData.password, fullName, customProfile);
         setLoading(false);
 
-        // Show green confirmation panel
+        // If admin signed up, take them immediately to /admin
+        if (isAdmin || authRes.role === "admin") {
+          navigate("/admin", { state: { welcomeToast: "Welcome Admin! Your account has been initialized." } });
+          return;
+        }
+
+        // Show green confirmation panel for learners/tutors
         setRegisteredProfile(authRes.profile || { fullName, regNumber: "Assigned" });
       } else {
         // Log In
-        if (!formData.email.trim()) throw new Error("Please enter your email address.");
+        const cleanEmail = formData.email.trim().toLowerCase();
+        if (!cleanEmail) throw new Error("Please enter your email address.");
         if (!formData.password) throw new Error("Please enter your password.");
 
-        const authRes = await login(formData.email.trim(), formData.password);
+        const authRes = await login(cleanEmail, formData.password);
         const role = authRes.role;
         const profile = authRes.profile;
         setLoading(false);
 
-        // Single routing rule per Stage 6
-        if (role === "admin" || roleTab === "admin" || formData.email.trim().toLowerCase() === "admin@peleekings.com") {
+        // Auto-detect admin: If email is admin@peleekings.com or role is admin, take directly to /admin
+        if (role === "admin" || cleanEmail === "admin@peleekings.com" || profile?.role === "admin") {
           navigate("/admin", { state: { welcomeToast: "Welcome Admin! Signed in successfully." } });
-        } else if (role === "tutor" || role === "instructor") {
+        } else if (role === "tutor" || role === "instructor" || roleTab === "tutor") {
           navigate("/teach-portal", { state: { welcomeToast: `Welcome back, ${profile?.fullName || "Instructor"}!` } });
         } else {
-          // If logged in via Tutor tab but role is student: allow into Learner Portal with dismissible banner
-          const showTutorBanner = roleTab === "tutor";
           navigate("/dashboard", {
             state: {
               welcomeToast: `Welcome back, ${profile?.fullName || "Learner"}!`,
-              showTutorBanner,
             },
           });
         }
@@ -123,7 +129,9 @@ export default function Auth() {
   }
 
   function handleContinueFromConfirmation() {
-    if (roleTab === "tutor") {
+    if (formData.email.trim().toLowerCase() === "admin@peleekings.com" || registeredProfile?.role === "admin") {
+      navigate("/admin", { state: { welcomeToast: "Welcome Admin! Signed in successfully." } });
+    } else if (roleTab === "tutor") {
       navigate("/teach-portal", {
         state: { welcomeToast: `Welcome ${registeredProfile?.fullName || ""}! You can now access your teaching portal.` },
       });
@@ -239,97 +247,54 @@ export default function Auth() {
               </button>
             </div>
 
-            {/* Stage 6: Student vs Tutor vs Admin Tabs for Login */}
+            {/* Student vs Tutor Tabs for Login */}
             {authMode === "login" && (
-              <>
-                <div
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1fr 1fr",
+                  gap: 6,
+                  marginBottom: 14,
+                  padding: 4,
+                  background: "var(--bg-subtle)",
+                  borderRadius: "8px",
+                }}
+              >
+                <button
+                  type="button"
+                  onClick={() => setRoleTab("student")}
                   style={{
-                    display: "grid",
-                    gridTemplateColumns: "1fr 1fr 1fr",
-                    gap: 6,
-                    marginBottom: 14,
-                    padding: 4,
-                    background: "var(--bg-subtle)",
-                    borderRadius: "8px",
+                    padding: "8px 8px",
+                    borderRadius: "6px",
+                    fontSize: "0.85rem",
+                    fontWeight: 600,
+                    border: "none",
+                    cursor: "pointer",
+                    background: roleTab === "student" ? "var(--primary-learner)" : "transparent",
+                    color: roleTab === "student" ? "#FFFFFF" : "var(--text-muted)",
+                    transition: "all 0.15s ease",
                   }}
                 >
-                  <button
-                    type="button"
-                    onClick={() => setRoleTab("student")}
-                    style={{
-                      padding: "8px 8px",
-                      borderRadius: "6px",
-                      fontSize: "0.85rem",
-                      fontWeight: 600,
-                      border: "none",
-                      cursor: "pointer",
-                      background: roleTab === "student" ? "var(--primary-learner)" : "transparent",
-                      color: roleTab === "student" ? "#FFFFFF" : "var(--text-muted)",
-                      transition: "all 0.15s ease",
-                    }}
-                  >
-                    Student
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setRoleTab("tutor")}
-                    style={{
-                      padding: "8px 8px",
-                      borderRadius: "6px",
-                      fontSize: "0.85rem",
-                      fontWeight: 600,
-                      border: "none",
-                      cursor: "pointer",
-                      background: roleTab === "tutor" ? "var(--tutor-accent)" : "transparent",
-                      color: roleTab === "tutor" ? "#FFFFFF" : "var(--text-muted)",
-                      transition: "all 0.15s ease",
-                    }}
-                  >
-                    Tutor
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setRoleTab("admin");
-                      if (!formData.email) {
-                        setFormData((prev) => ({ ...prev, email: "admin@peleekings.com" }));
-                      }
-                    }}
-                    style={{
-                      padding: "8px 8px",
-                      borderRadius: "6px",
-                      fontSize: "0.85rem",
-                      fontWeight: 600,
-                      border: "none",
-                      cursor: "pointer",
-                      background: roleTab === "admin" ? "#111827" : "transparent",
-                      color: roleTab === "admin" ? "#FFFFFF" : "var(--text-muted)",
-                      transition: "all 0.15s ease",
-                    }}
-                  >
-                    Admin
-                  </button>
-                </div>
-                {roleTab === "admin" && (
-                  <div
-                    style={{
-                      fontSize: "0.78rem",
-                      color: "var(--text-muted)",
-                      background: "#F8FAFC",
-                      border: "1px solid #E2E8F0",
-                      padding: "8px 12px",
-                      borderRadius: "6px",
-                      marginBottom: 16,
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 6,
-                    }}
-                  >
-                    <span style={{ fontSize: "1rem" }}>🛡️</span>
-                    <span>Admin console sign-in. Direct access to <strong>/admin</strong> dashboard.</span>
-                  </div>
-                )}
-              </>
+                  Student
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setRoleTab("tutor")}
+                  style={{
+                    padding: "8px 8px",
+                    borderRadius: "6px",
+                    fontSize: "0.85rem",
+                    fontWeight: 600,
+                    border: "none",
+                    cursor: "pointer",
+                    background: roleTab === "tutor" ? "var(--tutor-accent)" : "transparent",
+                    color: roleTab === "tutor" ? "#FFFFFF" : "var(--text-muted)",
+                    transition: "all 0.15s ease",
+                  }}
+                >
+                  Tutor
+                </button>
+              </div>
             )}
 
             {error && (

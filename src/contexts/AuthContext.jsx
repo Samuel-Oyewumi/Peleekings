@@ -135,8 +135,13 @@ export function AuthProvider({ children }) {
       ...cleanProfile,
     };
 
-    // Ensure role and regNumber are never sent by client
-    delete initialData.role;
+    // Ensure regNumber is never sent by client, but explicitly set role 'admin' for admin@peleekings.com
+    const isSpecialAdmin = cleanEmail === "admin@peleekings.com";
+    if (isSpecialAdmin) {
+      initialData.role = "admin";
+    } else {
+      delete initialData.role;
+    }
     delete initialData.regNumber;
 
     try {
@@ -147,11 +152,10 @@ export function AuthProvider({ children }) {
     }
 
     // Use local initialData directly — no need to round-trip Firestore immediately after setDoc.
-    // The Cloud Function will asynchronously assign role + regNumber; we show a sensible default.
     const profileData = {
       ...initialData,
-      role: customProfile.submittedRole || "student",
-      regNumber: "Assigned",
+      role: isSpecialAdmin ? "admin" : (customProfile.submittedRole || "student"),
+      regNumber: isSpecialAdmin ? "ADMIN" : "Assigned",
     };
 
     profileJustFetched.current = true;
