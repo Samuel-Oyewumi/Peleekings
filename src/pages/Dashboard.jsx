@@ -466,240 +466,237 @@ export default function Dashboard() {
         {/* ── TAB: OVERVIEW / DASHBOARD ──────────────────────────────── */}
         {activeNav === "dashboard" && (
           <>
-            {/* Top Row: Continue Learning & Weekly Learning Activity */}
-            <div className="dashboard-top-widgets-grid">
-              {/* Continue Learning Widget Card */}
-              {enrolledCourses.length > 0 ? (
-                <div className="continue-learning-widget-card">
-                  <div
-                    style={{
-                      width: 90,
-                      height: 90,
-                      borderRadius: "var(--radius-md)",
-                      overflow: "hidden",
-                      flexShrink: 0,
-                      background: "#0F172A",
-                      position: "relative"
-                    }}
-                  >
-                    <img
-                      src={enrolledCourses[0].image}
-                      alt="Course Thumbnail"
-                      style={{ width: "100%", height: "100%", objectFit: "cover" }}
-                    />
-                    <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.3)", display: "flex", alignItems: "center", justifyContent: "center", color: "#FFFFFF", fontWeight: 800 }}>
-                      {enrolledCourses[0].title.slice(0, 2).toUpperCase()}
-                    </div>
+            {/* ── DARK HERO: Continue where you left off ── */}
+            <div style={{
+              background: "linear-gradient(135deg, #0F172A 60%, #1a2744 100%)",
+              borderRadius: "var(--radius-md)",
+              padding: "32px 28px",
+              marginBottom: 24,
+              display: "grid",
+              gridTemplateColumns: enrolledCourses.length > 0 ? "1fr auto" : "1fr",
+              gap: 24,
+              alignItems: "stretch",
+              minHeight: 200,
+            }}>
+              {/* Left: Course info */}
+              <div style={{ display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
+                <div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
+                    <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#22C55E", display: "inline-block" }} />
+                    <span style={{ fontSize: "0.72rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: "#22C55E" }}>
+                      {enrolledCourses.length > 0 ? "Continue where you left off" : "Ready to start?"}
+                    </span>
                   </div>
-
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: "0.75rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--text-muted)", marginBottom: 4 }}>
-                      Continue Learning
-                    </div>
-                    <h3 style={{ fontSize: "1.2rem", fontWeight: 700, marginBottom: 4 }}>
-                      {enrolledCourses[0].title}
-                    </h3>
-                    <div style={{ fontSize: "0.85rem", color: "var(--text-muted)", marginBottom: 12 }}>
-                      {enrolledCourses[0].currentModule}
-                    </div>
-
-                    <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
-                      <div style={{ flex: 1, height: 7, background: "#F1F5F9", borderRadius: 99, overflow: "hidden" }}>
-                        <div style={{ width: `${enrolledCourses[0].progress}%`, height: "100%", background: "var(--primary-learner)", borderRadius: 99 }} />
-                      </div>
-                      <span style={{ fontSize: "0.85rem", fontWeight: 700, color: "var(--text-primary)" }}>
-                        {enrolledCourses[0].progress}%
-                      </span>
-                    </div>
-
-                    <button
-                      className="btn btn-solid-dark btn-sm"
-                      onClick={() => navigate(`/course/${enrolledCourses[0].id}`, { state: { classroom: true } })}
-                    >
-                      Continue Learning &rarr;
-                    </button>
-                  </div>
+                  <h2 style={{ fontSize: "2rem", fontWeight: 800, color: "#FFFFFF", marginBottom: 6, lineHeight: 1.15 }}>
+                    {enrolledCourses.length > 0 ? enrolledCourses[0].title : "Explore Courses"}
+                  </h2>
+                  <p style={{ fontSize: "0.9rem", color: "#94A3B8", marginBottom: 20 }}>
+                    {enrolledCourses.length > 0 ? enrolledCourses[0].currentModule : "Enroll in a course to begin your learning journey."}
+                  </p>
                 </div>
-              ) : (
-                <div className="continue-learning-widget-card" style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+
+                {enrolledCourses.length > 0 && (
                   <div>
-                    <h3 style={{ fontSize: "1.1rem", fontWeight: 700, marginBottom: 4 }}>Ready to start learning?</h3>
-                    <p style={{ color: "var(--text-muted)", fontSize: "0.85rem" }}>Enroll in your first course to build practical, monetizable skills.</p>
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.8rem", color: "#94A3B8", marginBottom: 6 }}>
+                      <span>Course progress</span>
+                      <span style={{ color: "#22C55E", fontWeight: 700 }}>{enrolledCourses[0].progress}%</span>
+                    </div>
+                    <div style={{ width: "100%", height: 6, background: "rgba(255,255,255,0.12)", borderRadius: 99, overflow: "hidden", marginBottom: 20 }}>
+                      <div style={{ width: `${enrolledCourses[0].progress}%`, height: "100%", background: "#22C55E", borderRadius: 99, transition: "width 0.6s ease" }} />
+                    </div>
                   </div>
-                  <button className="btn btn-solid-dark btn-sm" onClick={() => setActiveNav("browse-courses")}>
-                    Browse Courses &rarr;
-                  </button>
+                )}
+
+                <button
+                  className="btn btn-sm"
+                  style={{
+                    alignSelf: "flex-start",
+                    background: "#22C55E",
+                    color: "#FFFFFF",
+                    border: "none",
+                    borderRadius: 8,
+                    fontWeight: 700,
+                    padding: "10px 22px",
+                    fontSize: "0.9rem",
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                  }}
+                  onClick={() => enrolledCourses.length > 0
+                    ? navigate(`/course/${enrolledCourses[0].id}`, { state: { classroom: true } })
+                    : setActiveNav("browse-courses")
+                  }
+                >
+                  ▶ {enrolledCourses.length > 0 ? "Start learning" : "Browse courses"}
+                </button>
+              </div>
+
+              {/* Right: Next upcoming deadline panel */}
+              {enrolledCourses.length > 0 && (
+                <div style={{
+                  background: "rgba(255,255,255,0.06)",
+                  border: "1px solid rgba(255,255,255,0.1)",
+                  borderRadius: 12,
+                  padding: "20px 22px",
+                  minWidth: 220,
+                  maxWidth: 270,
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 8,
+                }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                    <span style={{ fontSize: "0.7rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: "#22C55E" }}>📋 Upcoming deadline</span>
+                  </div>
+                  <div style={{ fontWeight: 800, fontSize: "1.05rem", color: "#FFFFFF", lineHeight: 1.3 }}>
+                    Assignment Due
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: "0.8rem", color: "#94A3B8" }}>
+                    <span>⏰</span>
+                    <span>Fri, Oct 24 • 6:00 PM</span>
+                  </div>
+                  <div style={{ fontSize: "0.78rem", color: "#64748B", marginTop: 8, lineHeight: 1.5 }}>
+                    Submit your project link or file before the deadline to get graded.
+                  </div>
                 </div>
               )}
+            </div>
 
-              {/* Weekly Learning Activity Chart Card */}
-              <div className="activity-chart-widget-card">
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-                  <div>
-                    <div style={{ fontSize: "0.8rem", fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                      Weekly Learning Activity
-                    </div>
-                    <div style={{ fontSize: "1.75rem", fontWeight: 800, marginTop: 4, color: "var(--text-primary)" }}>
-                      {totalWeeklyLabel}
-                    </div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4 }}>
-                      <span
-                        style={{
-                          width: 8,
-                          height: 8,
-                          borderRadius: "50%",
-                          background: (totalWeeklyMinutes > 0) ? "#10B981" : "#94A3B8",
-                          boxShadow: (totalWeeklyMinutes > 0) ? "0 0 8px rgba(16, 185, 129, 0.6)" : "none",
-                          display: "inline-block",
-                        }}
-                      />
-                      <span style={{ fontSize: "0.72rem", color: "var(--text-muted)", fontWeight: 500 }}>
-                        Live Activity Tracker
-                      </span>
-                    </div>
-                  </div>
-                  {(totalWeeklyMinutes > 0) ? (
-                    <span className="pill-badge pill-success" style={{ fontSize: "0.75rem" }}>Active</span>
-                  ) : (
-                    <span className="pill-badge" style={{ fontSize: "0.75rem", background: "#F1F5F9", color: "var(--text-muted)" }}>This Week</span>
-                  )}
+            {/* ── 3 STAT CARDS ── */}
+            <div style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+              gap: 16,
+              marginBottom: 20,
+            }}>
+              {/* Stat 1: Course Progress */}
+              <div style={{
+                background: "#FFFFFF",
+                border: "1px solid var(--border-light)",
+                borderRadius: "var(--radius-md)",
+                padding: "20px 22px",
+                position: "relative",
+                overflow: "hidden",
+              }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
+                  <div style={{ width: 40, height: 40, borderRadius: 10, background: "#F0FDF4", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.1rem" }}>📈</div>
+                  <span style={{ fontSize: "0.7rem", fontWeight: 700, padding: "3px 10px", borderRadius: 999, background: "#F0FDF4", color: "#16A34A" }}>
+                    {enrolledCourses.length > 0 ? "Active" : "Not started"}
+                  </span>
                 </div>
+                <div style={{ fontSize: "2rem", fontWeight: 800, color: "var(--text-primary)", lineHeight: 1 }}>
+                  {enrolledCourses.length > 0 ? `${enrolledCourses[0].progress}%` : "0%"}
+                </div>
+                <div style={{ fontSize: "0.82rem", color: "var(--text-muted)", marginTop: 4 }}>Course progress</div>
+              </div>
 
-                {/* Micro bar chart */}
-                <div className="chart-bars-row">
-                  {weeklyActivityData.map(d => (
-                    <div key={d.day} className="chart-bar-col">
-                      <div
-                        className={`chart-bar-pillar ${d.highlight ? "highlighted" : ""}`}
-                        style={{ height: `${d.hours}px` }}
-                        title={`${d.day}: ${d.label}`}
-                      />
-                      <span style={{ fontSize: "0.725rem", color: "var(--text-muted)", fontWeight: 500 }}>
-                        {d.day}
-                      </span>
-                    </div>
-                  ))}
+              {/* Stat 2: Assignments Pending */}
+              <div style={{
+                background: "#FFFFFF",
+                border: "1px solid var(--border-light)",
+                borderRadius: "var(--radius-md)",
+                padding: "20px 22px",
+              }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
+                  <div style={{ width: 40, height: 40, borderRadius: 10, background: "#FFFBEB", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.1rem" }}>⏰</div>
+                  <span style={{ fontSize: "0.7rem", fontWeight: 700, padding: "3px 10px", borderRadius: 999, background: "#FEF3C7", color: "#D97706" }}>
+                    Due soon
+                  </span>
+                </div>
+                <div style={{ fontSize: "2rem", fontWeight: 800, color: "var(--text-primary)", lineHeight: 1 }}>
+                  {DEFAULT_ASSIGNMENTS.length - Object.keys(userSubmissions).length}
+                </div>
+                <div style={{ fontSize: "0.82rem", color: "var(--text-muted)", marginTop: 4 }}>Assignments pending</div>
+              </div>
+
+              {/* Stat 3: Weekly study time */}
+              <div style={{
+                background: "#FFFFFF",
+                border: "1px solid var(--border-light)",
+                borderRadius: "var(--radius-md)",
+                padding: "20px 22px",
+              }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
+                  <div style={{ width: 40, height: 40, borderRadius: 10, background: "#EEF2FF", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.1rem" }}>📚</div>
+                  <span style={{ fontSize: "0.7rem", fontWeight: 700, padding: "3px 10px", borderRadius: 999, background: "#EEF2FF", color: "var(--primary-learner)" }}>
+                    This week
+                  </span>
+                </div>
+                <div style={{ fontSize: "2rem", fontWeight: 800, color: "var(--text-primary)", lineHeight: 1 }}>
+                  {enrolledCourses.length}
+                </div>
+                <div style={{ fontSize: "0.82rem", color: "var(--text-muted)", marginTop: 4 }}>
+                  {enrolledCourses.length === 1 ? "Course enrolled" : "Courses enrolled"}
                 </div>
               </div>
             </div>
 
-            {/* Middle Row: My Courses & Upcoming Events */}
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 320px), 1fr))", gap: 24, marginBottom: 32 }}>
-              {/* My Courses Section */}
-              <div style={{ background: "#FFFFFF", border: "1px solid var(--border-light)", borderRadius: "var(--radius-md)", padding: 24 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-                  <h2 style={{ fontSize: "1.2rem", fontWeight: 800 }}>My Courses</h2>
-                  <button
-                    className="btn-ghost"
-                    style={{ fontSize: "0.85rem", color: "var(--primary-learner)", fontWeight: 600 }}
-                    onClick={() => setActiveNav("browse-courses")}
-                  >
-                    Browse all &rarr;
-                  </button>
+            {/* ── "Not the right course?" row ── */}
+            <div style={{
+              background: "#FFFFFF",
+              border: "1px solid var(--border-light)",
+              borderRadius: "var(--radius-md)",
+              padding: "18px 22px",
+              marginBottom: 28,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 16,
+              cursor: "pointer",
+            }}
+              onClick={() => setActiveNav("browse-courses")}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+                <div style={{ width: 40, height: 40, borderRadius: 10, background: "#F1F5F9", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.1rem" }}>⇄</div>
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: "0.95rem", color: "var(--text-primary)" }}>Looking for a different course?</div>
+                  <div style={{ fontSize: "0.82rem", color: "var(--text-muted)" }}>Browse the full catalog and enroll in any course that fits your goals.</div>
                 </div>
-
-                {enrolledCourses.length === 0 ? (
-                  <div style={{ textAlign: "center", padding: "32px 16px", color: "var(--text-muted)", background: "#F8FAFC", borderRadius: "var(--radius-sm)", border: "1px dashed var(--border-light)" }}>
-                    <p style={{ fontSize: "0.9rem", marginBottom: 12 }}>You haven't enrolled in any courses yet.</p>
-                    <button className="btn btn-primary btn-sm" onClick={() => setActiveNav("browse-courses")}>
-                      Explore Courses &rarr;
-                    </button>
-                  </div>
-                ) : (
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: 16 }}>
-                    {enrolledCourses.map(c => (
-                      <div
-                        key={c.id}
-                        style={{
-                          border: "1px solid var(--border-light)",
-                          borderRadius: "var(--radius-sm)",
-                          padding: 14,
-                          display: "flex",
-                          flexDirection: "column",
-                          background: "#F8FAFC",
-                          cursor: "pointer",
-                          transition: "transform 0.15s ease, box-shadow 0.15s ease"
-                        }}
-                        onClick={() => navigate(`/course/${c.id}`, { state: { classroom: true } })}
-                      >
-                        <div style={{ height: 90, borderRadius: 6, overflow: "hidden", marginBottom: 10, background: "#0F172A" }}>
-                          <img src={c.image} alt={c.title} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                        </div>
-                        <div style={{ fontWeight: 700, fontSize: "0.875rem", marginBottom: 4, lineHeight: 1.3 }}>
-                          {c.title}
-                        </div>
-                        <div style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginBottom: 12 }}>
-                          {c.type}
-                        </div>
-                        <div style={{ marginTop: "auto" }}>
-                          <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.75rem", fontWeight: 600, marginBottom: 4 }}>
-                            <span>Progress</span>
-                            <span>{c.progress}%</span>
-                          </div>
-                          <div style={{ width: "100%", height: 5, background: "#E2E8F0", borderRadius: 99, overflow: "hidden" }}>
-                            <div style={{ width: `${c.progress}%`, height: "100%", background: c.progress > 0 ? "var(--primary-learner)" : "transparent", borderRadius: 99 }} />
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
               </div>
+              <span style={{ fontSize: "1.1rem", color: "var(--text-muted)" }}>→</span>
+            </div>
 
-              {/* Upcoming Schedule / Deadlines Panel */}
-              <div style={{ background: "#FFFFFF", border: "1px solid var(--border-light)", borderRadius: "var(--radius-md)", padding: 24 }}>
-                <h2 style={{ fontSize: "1.2rem", fontWeight: 800, marginBottom: 16 }}>Upcoming</h2>
-                <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-                  {/* Item 1 */}
-                  <div style={{ display: "flex", alignItems: "flex-start", gap: 12, padding: 12, background: "#F8FAFC", borderRadius: "var(--radius-sm)", border: "1px solid var(--border-subtle)" }}>
-                    <div style={{ width: 36, height: 36, borderRadius: "50%", background: "#EFF6FF", color: "#1D4ED8", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                      📝
-                    </div>
-                    <div>
-                      <div style={{ fontWeight: 700, fontSize: "0.875rem", color: "var(--text-primary)" }}>
-                        Assignment Due
-                      </div>
-                      <div style={{ fontSize: "0.775rem", color: "var(--text-muted)" }}>
-                        AI Automation &bull; Fri, 6:00 PM
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Item 2 */}
-                  <div style={{ display: "flex", alignItems: "flex-start", gap: 12, padding: 12, background: "#F8FAFC", borderRadius: "var(--radius-sm)", border: "1px solid var(--border-subtle)" }}>
-                    <div style={{ width: 36, height: 36, borderRadius: "50%", background: "#FEF3C7", color: "#92400E", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                      ⏱
-                    </div>
-                    <div>
-                      <div style={{ fontWeight: 700, fontSize: "0.875rem", color: "var(--text-primary)" }}>
-                        Module 4 Assessment
-                      </div>
-                      <div style={{ fontSize: "0.775rem", color: "var(--text-muted)" }}>
-                        Test &bull; Sat, 10:00 AM
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Learning Paths Promo */}
-                <div style={{ marginTop: 24, padding: 16, background: "linear-gradient(135deg, #F5F3FF, #EFF6FF)", borderRadius: "var(--radius-sm)", border: "1px solid #E0E7FF" }}>
-                  <div style={{ fontSize: "0.75rem", fontWeight: 700, textTransform: "uppercase", color: "var(--primary-learner)", marginBottom: 4 }}>
-                    Learning Paths
-                  </div>
-                  <div style={{ fontWeight: 800, fontSize: "0.95rem", color: "#0F172A", marginBottom: 4 }}>
-                    Become a Digital Creator
-                  </div>
-                  <div style={{ fontSize: "0.8rem", color: "var(--text-muted)", marginBottom: 12 }}>
-                    6 courses &bull; 8 milestones
-                  </div>
+            {/* ── QUICK ACCESS ── */}
+            <div style={{ marginBottom: 32 }}>
+              <div style={{ fontSize: "0.75rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--text-muted)", marginBottom: 14 }}>
+                Quick Access
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 14 }}>
+                {[
+                  { icon: "🎬", label: "My Courses", sub: "Resume your learning", color: "#FEE2E2", iconColor: "#EF4444", nav: "my-courses" },
+                  { icon: "📝", label: "Assignments", sub: "View pending submissions", color: "#FEF3C7", iconColor: "#D97706", nav: "assignments" },
+                  { icon: "⏱", label: "Tests", sub: "Check scheduled tests", color: "#EEF2FF", iconColor: "var(--primary-learner)", nav: "tests" },
+                  { icon: "📄", label: "Notes", sub: "Course materials", color: "#F0FDF4", iconColor: "#16A34A", nav: "notes" },
+                  { icon: "📢", label: "Announcements", sub: "Latest from instructors", color: "#FFF7ED", iconColor: "#EA580C", nav: "announcements" },
+                  { icon: "🎓", label: "Certificates", sub: "View achievements", color: "#F5F3FF", iconColor: "#7C3AED", nav: "certificates" },
+                ].map(item => (
                   <button
-                    className="btn btn-outline btn-sm"
-                    style={{ width: "100%", background: "#FFFFFF" }}
-                    onClick={() => setShowPathModal(true)}
+                    key={item.nav}
+                    onClick={() => setActiveNav(item.nav)}
+                    style={{
+                      background: "#FFFFFF",
+                      border: "1px solid var(--border-light)",
+                      borderRadius: "var(--radius-md)",
+                      padding: "16px 18px",
+                      textAlign: "left",
+                      cursor: "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 14,
+                      transition: "box-shadow 0.15s ease, transform 0.15s ease",
+                    }}
+                    onMouseEnter={e => { e.currentTarget.style.boxShadow = "0 4px 16px rgba(0,0,0,0.08)"; e.currentTarget.style.transform = "translateY(-1px)"; }}
+                    onMouseLeave={e => { e.currentTarget.style.boxShadow = "none"; e.currentTarget.style.transform = "none"; }}
                   >
-                    Explore Path &rarr;
+                    <div style={{ width: 40, height: 40, borderRadius: 10, background: item.color, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.1rem", flexShrink: 0 }}>
+                      {item.icon}
+                    </div>
+                    <div>
+                      <div style={{ fontWeight: 700, fontSize: "0.875rem", color: "var(--text-primary)", marginBottom: 2 }}>{item.label}</div>
+                      <div style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>{item.sub}</div>
+                    </div>
                   </button>
-                </div>
+                ))}
               </div>
             </div>
           </>

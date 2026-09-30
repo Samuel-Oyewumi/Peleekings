@@ -76,7 +76,7 @@ export const COURSES_CATALOG = [
   },
   {
     id: "graphic-design",
-    title: "Graphic Design Fundamentals & Figma",
+    title: "Graphic Design Fundamentals",
     category: "Tech & Digital Skills",
     badge: "DESIGN",
     badgeClass: "pill-design",

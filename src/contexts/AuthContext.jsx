@@ -173,7 +173,7 @@ export function AuthProvider({ children }) {
     if (!cleanEmail) throw new Error("Please enter your email address.");
     if (!password) throw new Error("Please enter your password.");
 
-    // 1. Authenticate with Firebase Auth
+    // 1. Authenticate with Firebase Auth — await this (required)
     let userCredential;
     try {
       userCredential = await signInWithEmailAndPassword(auth, cleanEmail, password);
@@ -183,55 +183,59 @@ export function AuthProvider({ children }) {
 
     const user = userCredential.user;
 
-    // 2. Fetch real user profile from Firestore (Source of Truth)
-    let profileData = null;
+    // 2. Build an instant profile from Auth data + cached data so UI navigates immediately.
+    //    Firestore is synced in the background — no blocking round-trip.
+    let cachedProfile = null;
     try {
-      const docSnap = await getDoc(doc(db, "users", user.uid));
-      if (docSnap.exists()) {
-        profileData = docSnap.data();
-      } else {
-        // Fallback profile if Firestore doc is missing, preventing broken states or lockout
-        profileData = {
+      const cached = localStorage.getItem("peleekings_user_profile_cache");
+      if (cached) cachedProfile = JSON.parse(cached);
+    } catch {}
+
+    const isAdmin = cleanEmail === "admin@peleekings.com";
+    const instantProfile = cachedProfile && cachedProfile.uid === user.uid
+      ? { ...cachedProfile }
+      : {
           uid: user.uid,
           email: user.email,
           displayName: user.displayName || user.email.split("@")[0],
           fullName: user.displayName || user.email.split("@")[0],
-          role: "student",
+          role: isAdmin ? "admin" : "student",
           studentType: "non_corper",
           status: "active",
-          createdAt: serverTimestamp(),
         };
-        await setDoc(doc(db, "users", user.uid), profileData, { merge: true });
-      }
-    } catch (fsErr) {
-      console.warn("Firestore profile fetch notice:", fsErr);
-      profileData = {
-        uid: user.uid,
-        email: user.email,
-        displayName: user.displayName || user.email.split("@")[0],
-        fullName: user.displayName || user.email.split("@")[0],
-        role: "student",
-        studentType: "non_corper",
-        status: "active",
-      };
-    }
 
-    // If logging in with the administrative email, ensure admin privileges
-    if (cleanEmail === "admin@peleekings.com") {
-      profileData.role = "admin";
-      try {
-        await setDoc(doc(db, "users", user.uid), { role: "admin" }, { merge: true });
-      } catch (adminSetErr) {
-        console.warn("Notice: could not sync admin role to Firestore:", adminSetErr);
-      }
-    }
+    if (isAdmin) instantProfile.role = "admin";
 
-    setCurrentUser(user);
-    setUserProfile(profileData);
-    localStorage.setItem("peleekings_user_profile_cache", JSON.stringify(profileData));
+    // Set state & navigate immediately — no Firestore wait
     profileJustFetched.current = true;
+    setCurrentUser(user);
+    setUserProfile(instantProfile);
+    localStorage.setItem("peleekings_user_profile_cache", JSON.stringify(instantProfile));
 
-    return { user, role: profileData.role || "student", profile: profileData };
+    // 3. Background sync: fetch real Firestore profile and quietly update UI
+    getDoc(doc(db, "users", user.uid))
+      .then((docSnap) => {
+        let fresh;
+        if (docSnap.exists()) {
+          fresh = docSnap.data();
+        } else {
+          fresh = { ...instantProfile, createdAt: serverTimestamp() };
+          // Fire-and-forget: create missing doc
+          setDoc(doc(db, "users", user.uid), fresh, { merge: true }).catch(() => {});
+        }
+        if (isAdmin) fresh.role = "admin";
+        setUserProfile(fresh);
+        localStorage.setItem("peleekings_user_profile_cache", JSON.stringify(fresh));
+        // Fire-and-forget: sync admin role to Firestore
+        if (isAdmin) {
+          setDoc(doc(db, "users", user.uid), { role: "admin" }, { merge: true }).catch(() => {});
+        }
+      })
+      .catch((fsErr) => {
+        console.warn("Background Firestore profile sync notice:", fsErr);
+      });
+
+    return { user, role: instantProfile.role || "student", profile: instantProfile };
   }
 
   /**
@@ -270,8 +274,8 @@ export function AuthProvider({ children }) {
       enrollInCourse(user.uid, "ai-essentials", "online")
         .catch(enrErr => console.warn("Could not auto-enroll Google user in default course:", enrErr));
 
-      // Brief wait for Cloud Function onUserCreated
-      await new Promise((res) => setTimeout(res, 800));
+      // Brief wait for Cloud Function onUserCreated — reduced to avoid blocking login
+      await new Promise((res) => setTimeout(res, 300));
       docSnap = await getDoc(doc(db, "users", user.uid));
     }
 
