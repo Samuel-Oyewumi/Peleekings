@@ -383,13 +383,15 @@ export default function Dashboard() {
               >
                 ☰
               </button>
-              <h1 style={{ fontSize: "1.9rem", fontWeight: 800, marginBottom: 4 }}>
-                Good morning, {firstName} &#128075;
-              </h1>
+              <div>
+                <h1 style={{ fontSize: "1.9rem", fontWeight: 800, marginBottom: 2 }}>
+                  Good morning, {firstName} &#128075;
+                </h1>
+                <p style={{ color: "var(--text-secondary)", fontSize: "0.95rem", margin: 0 }}>
+                  Ready to continue learning today?
+                </p>
+              </div>
             </div>
-            <p style={{ color: "var(--text-secondary)", fontSize: "0.95rem" }}>
-              Ready to continue learning today?
-            </p>
           </div>
           <div style={{ fontSize: "0.875rem", color: "var(--text-muted)", fontWeight: 500, background: "#FFFFFF", border: "1px solid var(--border-light)", padding: "8px 16px", borderRadius: "var(--radius-full)" }}>
             {new Date().toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "short", day: "numeric" })}
