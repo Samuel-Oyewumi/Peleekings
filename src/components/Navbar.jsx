@@ -170,26 +170,7 @@ export default function Navbar() {
     setShowNotifications(false);
   }, [location.pathname]);
 
-  // Scroll listener to update active underline between Courses and Learning Paths on landing page
-  useEffect(() => {
-    if (location.pathname !== "/") {
-      return;
-    }
-    function handleScroll() {
-      const learningSection = document.getElementById("learning-paths-section");
-      if (learningSection) {
-        const rect = learningSection.getBoundingClientRect();
-        if (rect.top <= 250 && rect.bottom >= 150) {
-          setActiveSection("learning-paths");
-          return;
-        }
-      }
-      setActiveSection("courses");
-    }
 
-    window.addEventListener("scroll", handleScroll, { passive: true });
-    return () => window.removeEventListener("scroll", handleScroll);
-  }, [location.pathname]);
 
   const isLanding = location.pathname === "/";
   const isDashboard = location.pathname === "/dashboard";
@@ -269,72 +250,7 @@ export default function Navbar() {
         <span>Peleekings</span>
       </Link>
 
-      {/* ── Navigation Links ──────────────
-          Only shown on public pages (hidden on the user's login dashboard interface)
-          Order: Courses -> Learning Paths -> Resources -> About
-      ────────────────────────────────────────────────────────────── */}
-      {!isDashboard && (
-        <nav className="nav-links-menu">
-          {/* 1. Courses */}
-          <Link
-            to="/"
-            className={`nav-item-link ${isActive("/") && activeSection === "courses" ? "active" : ""}`}
-            id="nav-courses"
-            onClick={() => {
-              setActiveSection("courses");
-              if (location.pathname === "/") {
-                const el = document.getElementById("courses-catalog-section");
-                if (el) el.scrollIntoView({ behavior: "smooth" });
-              }
-            }}
-          >
-            Courses
-          </Link>
 
-          {/* 2. Learning Paths */}
-          <Link
-            to="/"
-            className={`nav-item-link ${isActive("/") && activeSection === "learning-paths" ? "active" : ""}`}
-            id="nav-learning-paths"
-            onClick={(e) => {
-              setActiveSection("learning-paths");
-              if (location.pathname !== "/") {
-                navigate("/");
-                setTimeout(() => {
-                  const el = document.getElementById("learning-paths-section");
-                  if (el) el.scrollIntoView({ behavior: "smooth" });
-                }, 120);
-              } else {
-                e.preventDefault();
-                const el = document.getElementById("learning-paths-section");
-                if (el) el.scrollIntoView({ behavior: "smooth" });
-              }
-            }}
-          >
-            Learning Paths
-          </Link>
-
-          {/* 3. Resources */}
-          <button
-            type="button"
-            className="nav-item-link"
-            id="nav-resources"
-            onClick={() => setShowResourcesModal(true)}
-            style={{ background: "none", border: "none", cursor: "pointer", font: "inherit" }}
-          >
-            Resources
-          </button>
-
-          {/* 4. About */}
-          <Link
-            to="/about"
-            className={`nav-item-link ${isActive("/about") ? "active" : ""}`}
-            id="nav-about"
-          >
-            About
-          </Link>
-        </nav>
-      )}
 
       {/* Right Actions */}
       <div className="nav-actions-group">
