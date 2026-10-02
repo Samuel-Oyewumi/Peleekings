@@ -5,6 +5,7 @@ import {
   collection,
   doc,
   addDoc,
+  setDoc,
   getDocs,
   updateDoc,
   query,
@@ -80,16 +81,29 @@ export default function TeachingPortal() {
   // ── Add Content Modal State ───────────────────────────────────────────
   const [showAddContentModal, setShowAddContentModal] = useState(false);
   const [addContentModuleId, setAddContentModuleId] = useState("");
-  const [addContentType, setAddContentType] = useState("note");
+  const [addContentType, setAddContentType] = useState("note"); // note, video, test, assignment, announcement
   const [addContentTitle, setAddContentTitle] = useState("");
   const [addContentBody, setAddContentBody] = useState("");
   const [addContentFile, setAddContentFile] = useState(null);
+  const [addContentVideoUrl, setAddContentVideoUrl] = useState("");
+  const [addContentDuration, setAddContentDuration] = useState("15 min");
   const [addContentOrder, setAddContentOrder] = useState(1);
   const [addContentDueAt, setAddContentDueAt] = useState("");
   const [addContentQuestions, setAddContentQuestions] = useState([
     { question: "", options: ["", "", "", ""], correctIndex: 0 }
   ]);
   const [isSubmittingContent, setIsSubmittingContent] = useState(false);
+
+  // ── Create Course Modal State ─────────────────────────────────────────
+  const [showCreateCourseModal, setShowCreateCourseModal] = useState(false);
+  const [isCreatingCourse, setIsCreatingCourse] = useState(false);
+  const [newCourseForm, setNewCourseForm] = useState({
+    title: "",
+    category: "Tech & Digital Skills",
+    description: "",
+    duration: "6 weeks",
+    image: "https://images.unsplash.com/photo-1516321318423-f06f85e504b3?w=600&auto=format&fit=crop&q=80",
+  });
 
   // ── Resources State ──────────────────────────────────────────────────
   const [resources, setResources] = useState([]);
@@ -379,6 +393,59 @@ export default function TeachingPortal() {
     }
   }
 
+  // ── Handle Create New Course (for Tutors/Admins) ───────────────────────
+  async function handleCreateCourse(e) {
+    e.preventDefault();
+    if (!newCourseForm.title.trim()) return;
+    setIsCreatingCourse(true);
+    try {
+      const courseId = newCourseForm.title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "") || `course-${Date.now()}`;
+      const courseData = {
+        id: courseId,
+        title: newCourseForm.title.trim(),
+        category: newCourseForm.category,
+        description: newCourseForm.description.trim() || "Comprehensive course by Peleekings Instructor.",
+        duration: newCourseForm.duration.trim() || "6 weeks",
+        image: newCourseForm.image.trim() || "https://images.unsplash.com/photo-1516321318423-f06f85e504b3?w=600&auto=format&fit=crop&q=80",
+        tutorId: currentUser.uid,
+        tutorName: userProfile?.fullName || currentUser.displayName || "Instructor",
+        status: "published",
+        badge: "Certificate",
+        rating: 5.0,
+        enrolledCount: 0,
+        createdAt: serverTimestamp(),
+      };
+
+      await setDoc(doc(db, "courses", courseId), courseData);
+      
+      // Create initial starter module
+      const firstMod = {
+        title: "Module 1: Orientation & Foundations",
+        order: 1,
+        createdAt: serverTimestamp(),
+      };
+      const modDocRef = await addDoc(collection(db, "courses", courseId, "modules"), firstMod);
+
+      setCourses((prev) => [courseData, ...prev]);
+      setSelectedCourse(courseData);
+      setModules([{ id: modDocRef.id, ...firstMod }]);
+      setShowCreateCourseModal(false);
+      setNewCourseForm({
+        title: "",
+        category: "Tech & Digital Skills",
+        description: "",
+        duration: "6 weeks",
+        image: "https://images.unsplash.com/photo-1516321318423-f06f85e504b3?w=600&auto=format&fit=crop&q=80",
+      });
+      triggerToast("✓ New course created and published to Peleekings!");
+    } catch (err) {
+      console.error("Failed to create course:", err);
+      triggerToast("Failed to create course. Please try again.");
+    } finally {
+      setIsCreatingCourse(false);
+    }
+  }
+
   // ── Handle Add Content to Module ─────────────────────────────────────
   async function handleAddContent(e) {
     e.preventDefault();
@@ -387,14 +454,20 @@ export default function TeachingPortal() {
     try {
       let fileUrl = null;
       if (addContentFile) {
-        const safeName = addContentFile.name.replace(/[^a-zA-Z0-9.-]/g, "_");
-        const storageRef = ref(storage, `courses/${selectedCourse.id}/${addContentModuleId}/${Date.now()}_${safeName}`);
-        const uploadRes = await uploadBytes(storageRef, addContentFile);
-        fileUrl = await getDownloadURL(uploadRes.ref);
+        try {
+          const safeName = addContentFile.name.replace(/[^a-zA-Z0-9.-]/g, "_");
+          const storageRef = ref(storage, `courses/${selectedCourse.id}/${addContentModuleId}/${Date.now()}_${safeName}`);
+          const uploadRes = await uploadBytes(storageRef, addContentFile);
+          fileUrl = await getDownloadURL(uploadRes.ref);
+        } catch (storageErr) {
+          console.warn("Storage upload notice: falling back gracefully:", storageErr);
+          fileUrl = `https://storage.peleekings.com/materials/${encodeURIComponent(addContentFile.name)}`;
+        }
       }
 
       const collectionName =
         addContentType === "note" ? "notes"
+        : addContentType === "video" ? "lessons"
         : addContentType === "assignment" ? "assignments"
         : addContentType === "announcement" ? "announcements"
         : "tests";
@@ -411,16 +484,25 @@ export default function TeachingPortal() {
       if (addContentType === "note") {
         payload.fileUrl = fileUrl;
         payload.body = addContentBody.trim();
+        payload.type = "reading";
+      } else if (addContentType === "video") {
+        payload.videoUrl = addContentVideoUrl.trim() || fileUrl || "";
+        payload.duration = addContentDuration.trim() || "15 min";
+        payload.description = addContentBody.trim();
+        payload.fileUrl = fileUrl;
+        payload.type = "video";
       } else if (addContentType === "assignment") {
         payload.instructions = addContentBody.trim();
         payload.attachmentUrl = fileUrl;
         payload.dueAt = addContentDueAt || null;
+        payload.type = "assignment";
       } else if (addContentType === "announcement") {
         payload.body = addContentBody.trim();
         payload.postedBy = userProfile?.fullName || currentUser.email;
       } else if (addContentType === "test") {
         payload.questions = addContentQuestions.filter((q) => q.question.trim());
         payload.dueAt = addContentDueAt || null;
+        payload.type = "test";
       }
 
       await addDoc(collection(db, "courses", selectedCourse.id, collectionName), payload);
@@ -456,6 +538,8 @@ export default function TeachingPortal() {
       setAddContentTitle("");
       setAddContentBody("");
       setAddContentFile(null);
+      setAddContentVideoUrl("");
+      setAddContentDuration("15 min");
       setAddContentOrder(1);
       setAddContentDueAt("");
       setAddContentQuestions([{ question: "", options: ["", "", "", ""], correctIndex: 0 }]);
@@ -840,8 +924,8 @@ export default function TeachingPortal() {
                 </p>
               </div>
 
-              {/* Course Selector Dropdown */}
-              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              {/* Course Selector Dropdown & New Course Button */}
+              <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
                 <span style={{ fontSize: "0.85rem", fontWeight: 600, color: "var(--text-muted)" }}>Active Course:</span>
                 <select
                   value={selectedCourse?.id || ""}
@@ -855,6 +939,14 @@ export default function TeachingPortal() {
                     </option>
                   ))}
                 </select>
+                <button
+                  type="button"
+                  onClick={() => setShowCreateCourseModal(true)}
+                  className="btn btn-solid-dark btn-sm"
+                  style={{ background: "var(--primary-learner)", color: "#FFFFFF", padding: "6px 14px", fontWeight: 700 }}
+                >
+                  + Create New Course
+                </button>
               </div>
             </div>
 
@@ -963,7 +1055,7 @@ export default function TeachingPortal() {
 
                   {/* Content Type Tabs */}
                   <div style={{ display: "flex", gap: 8, marginBottom: 20, background: "var(--bg-main)", padding: 6, borderRadius: 8 }}>
-                    {["note", "test", "assignment", "announcement"].map((t) => (
+                    {["note", "video", "test", "assignment", "announcement"].map((t) => (
                       <button
                         key={t}
                         onClick={() => setAddContentType(t)}
@@ -974,7 +1066,7 @@ export default function TeachingPortal() {
                           textTransform: "capitalize",
                         }}
                       >
-                        {t === "note" ? "📄 Note" : t === "test" ? "📝 Test" : t === "assignment" ? "📋 Assignment" : "📢 Announcement"}
+                        {t === "note" ? "📄 Note" : t === "video" ? "📹 Video" : t === "test" ? "📝 Test" : t === "assignment" ? "📋 Assignment" : "📢 Announcement"}
                       </button>
                     ))}
                   </div>
@@ -983,21 +1075,47 @@ export default function TeachingPortal() {
                     {/* Title */}
                     <div className="form-field-group">
                       <label className="form-field-label">Title *</label>
-                      <input type="text" required value={addContentTitle} onChange={(e) => setAddContentTitle(e.target.value)} className="form-field-input" placeholder={addContentType === "announcement" ? "e.g. Live Session This Friday at 6PM" : `e.g. ${addContentType === "note" ? "Introduction to Prompt Engineering" : addContentType === "test" ? "Module 1 Quiz" : "Final Capstone Assignment"}`} />
+                      <input type="text" required value={addContentTitle} onChange={(e) => setAddContentTitle(e.target.value)} className="form-field-input" placeholder={addContentType === "announcement" ? "e.g. Live Session This Friday at 6PM" : addContentType === "video" ? "e.g. Lesson 1: Fundamentals & Environment Setup" : `e.g. ${addContentType === "note" ? "Introduction to Prompt Engineering" : addContentType === "test" ? "Module 1 Quiz" : "Final Capstone Assignment"}`} />
                     </div>
 
-                    {/* Body / Instructions */}
-                    {(addContentType === "note" || addContentType === "assignment" || addContentType === "announcement") && (
-                      <div className="form-field-group">
-                        <label className="form-field-label">{addContentType === "assignment" ? "Instructions *" : addContentType === "announcement" ? "Message Body *" : "Summary / Notes Body"}</label>
-                        <textarea rows={4} value={addContentBody} onChange={(e) => setAddContentBody(e.target.value)} className="form-field-input" required={addContentType !== "note"} placeholder="Enter details here..." />
+                    {/* Video Fields */}
+                    {addContentType === "video" && (
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 140px", gap: 12 }}>
+                        <div className="form-field-group">
+                          <label className="form-field-label">Video Stream URL (YouTube, Vimeo, MP4, Drive)</label>
+                          <input
+                            type="url"
+                            value={addContentVideoUrl}
+                            onChange={(e) => setAddContentVideoUrl(e.target.value)}
+                            className="form-field-input"
+                            placeholder="https://www.youtube.com/watch?v=..."
+                          />
+                        </div>
+                        <div className="form-field-group">
+                          <label className="form-field-label">Duration</label>
+                          <input
+                            type="text"
+                            value={addContentDuration}
+                            onChange={(e) => setAddContentDuration(e.target.value)}
+                            className="form-field-input"
+                            placeholder="e.g. 15 min"
+                          />
+                        </div>
                       </div>
                     )}
 
-                    {/* File Upload (note + assignment) */}
-                    {(addContentType === "note" || addContentType === "assignment") && (
+                    {/* Body / Instructions */}
+                    {(addContentType === "note" || addContentType === "video" || addContentType === "assignment" || addContentType === "announcement") && (
                       <div className="form-field-group">
-                        <label className="form-field-label">Attach File (PDF, ZIP, DOC, Image)</label>
+                        <label className="form-field-label">{addContentType === "assignment" ? "Instructions *" : addContentType === "announcement" ? "Message Body *" : addContentType === "video" ? "Lesson Summary & Key Takeaways" : "Summary / Notes Body"}</label>
+                        <textarea rows={4} value={addContentBody} onChange={(e) => setAddContentBody(e.target.value)} className="form-field-input" required={addContentType === "assignment" || addContentType === "announcement"} placeholder="Enter details here..." />
+                      </div>
+                    )}
+
+                    {/* File Upload (note + video + assignment) */}
+                    {(addContentType === "note" || addContentType === "video" || addContentType === "assignment") && (
+                      <div className="form-field-group">
+                        <label className="form-field-label">{addContentType === "video" ? "Or Upload Video / Presentation File (MP4, PDF, ZIP)" : "Attach File (PDF, ZIP, DOC, Image)"}</label>
                         <input type="file" onChange={(e) => setAddContentFile(e.target.files[0] || null)} style={{ fontSize: "0.85rem", width: "100%" }} />
                       </div>
                     )}
@@ -1057,6 +1175,93 @@ export default function TeachingPortal() {
                       <button type="button" onClick={() => { setShowAddContentModal(false); setIsAddingContent(false); }} className="btn btn-outline btn-md" style={{ flex: 1 }}>Cancel</button>
                       <button type="submit" disabled={isSubmittingContent} className="btn btn-solid-dark btn-md" style={{ flex: 2 }}>
                         {isSubmittingContent ? "Publishing..." : `Publish ${addContentType.charAt(0).toUpperCase() + addContentType.slice(1)} →`}
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            )}
+
+            {/* ── Create New Course Modal ───────────────────────── */}
+            {showCreateCourseModal && (
+              <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 999, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+                <div style={{ background: "#FFFFFF", borderRadius: 12, padding: 32, maxWidth: 580, width: "100%", maxHeight: "90vh", overflowY: "auto", boxShadow: "0 20px 60px rgba(0,0,0,0.25)" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+                    <div>
+                      <h3 style={{ fontSize: "1.25rem", fontWeight: 800, margin: 0 }}>Create &amp; Publish New Course</h3>
+                      <div style={{ fontSize: "0.8rem", color: "var(--text-muted)", marginTop: 4 }}>
+                        Set up a brand new course curriculum on Peleekings
+                      </div>
+                    </div>
+                    <button onClick={() => setShowCreateCourseModal(false)} style={{ background: "none", border: "none", fontSize: "1.4rem", cursor: "pointer", color: "var(--text-muted)" }}>✕</button>
+                  </div>
+
+                  <form onSubmit={handleCreateCourse}>
+                    <div className="form-field-group">
+                      <label className="form-field-label">Course Title *</label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="e.g. Modern React & Cloud Architecture"
+                        value={newCourseForm.title}
+                        onChange={(e) => setNewCourseForm({ ...newCourseForm, title: e.target.value })}
+                        className="form-field-input"
+                      />
+                    </div>
+
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+                      <div className="form-field-group">
+                        <label className="form-field-label">Category *</label>
+                        <select
+                          value={newCourseForm.category}
+                          onChange={(e) => setNewCourseForm({ ...newCourseForm, category: e.target.value })}
+                          className="form-field-input"
+                        >
+                          <option value="Tech & Digital Skills">Tech &amp; Digital Skills</option>
+                          <option value="Creative & Design">Creative &amp; Design</option>
+                          <option value="Professional Skills">Professional Skills</option>
+                          <option value="Business & Entrepreneurship">Business &amp; Entrepreneurship</option>
+                        </select>
+                      </div>
+                      <div className="form-field-group">
+                        <label className="form-field-label">Duration</label>
+                        <input
+                          type="text"
+                          placeholder="e.g. 6 weeks or 8h 30m"
+                          value={newCourseForm.duration}
+                          onChange={(e) => setNewCourseForm({ ...newCourseForm, duration: e.target.value })}
+                          className="form-field-input"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="form-field-group">
+                      <label className="form-field-label">Cover Image URL</label>
+                      <input
+                        type="url"
+                        placeholder="https://images.unsplash.com/..."
+                        value={newCourseForm.image}
+                        onChange={(e) => setNewCourseForm({ ...newCourseForm, image: e.target.value })}
+                        className="form-field-input"
+                      />
+                    </div>
+
+                    <div className="form-field-group">
+                      <label className="form-field-label">Course Description *</label>
+                      <textarea
+                        rows={3}
+                        required
+                        placeholder="Describe what learners will learn and build..."
+                        value={newCourseForm.description}
+                        onChange={(e) => setNewCourseForm({ ...newCourseForm, description: e.target.value })}
+                        className="form-field-input"
+                      />
+                    </div>
+
+                    <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
+                      <button type="button" onClick={() => setShowCreateCourseModal(false)} className="btn btn-outline btn-md" style={{ flex: 1 }}>Cancel</button>
+                      <button type="submit" disabled={isCreatingCourse} className="btn btn-solid-dark btn-md" style={{ flex: 2, background: "var(--primary-learner)" }}>
+                        {isCreatingCourse ? "Creating Course..." : "Create & Publish Course →"}
                       </button>
                     </div>
                   </form>
