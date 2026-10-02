@@ -3,7 +3,7 @@ import { Link, useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { getUserActivity, submitAssignment, getUserEnrollments, enrollInCourse, getWeeklyActivityData, incrementDailyActivity } from "../contexts/userActivity";
 import { COURSES_CATALOG } from "../data/courses";
-import { doc, setDoc } from "firebase/firestore";
+import { doc, setDoc, getDocs, collection } from "firebase/firestore";
 import { db } from "../firebase";
 
 function computeUserRegCode(profile, uid) {
@@ -38,6 +38,7 @@ export default function Dashboard() {
   const [catalogSearch, setCatalogSearch] = useState("");
   const [catalogFilter, setCatalogFilter] = useState("All");
   const [enrollingId, setEnrollingId] = useState(null);
+  const [allCoursesList, setAllCoursesList] = useState(COURSES_CATALOG);
 
   // Auto-dismiss welcome toast after 4 seconds
   useEffect(() => {
@@ -120,13 +121,33 @@ export default function Dashboard() {
     return () => window.removeEventListener("peleekings_activity_updated", handleUpdate);
   }, [currentUser]);
 
+  // Load live Firestore courses (created by instructors/admins) and merge with catalog
+  useEffect(() => {
+    async function loadDynamicCourses() {
+      try {
+        const snap = await getDocs(collection(db, "courses"));
+        if (!snap.empty) {
+          const fromDb = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+          const combined = [
+            ...fromDb,
+            ...COURSES_CATALOG.filter((c) => !fromDb.some((fc) => fc.id === c.id)),
+          ];
+          setAllCoursesList(combined);
+        }
+      } catch (err) {
+        console.warn("Notice: could not load dynamic courses from Firestore:", err);
+      }
+    }
+    loadDynamicCourses();
+  }, []);
+
   useEffect(() => {
     if (!currentUser?.uid) return;
     getUserEnrollments(currentUser.uid)
       .then((enrollments) => {
         if (enrollments && enrollments.length > 0) {
           const mapped = enrollments.map((enr) => {
-            const catalogItem = COURSES_CATALOG.find((c) => c.id === enr.courseId) || {};
+            const catalogItem = allCoursesList.find((c) => c.id === enr.courseId) || COURSES_CATALOG.find((c) => c.id === enr.courseId) || {};
             return {
               id: enr.courseId,
               title: catalogItem.title || enr.courseTitle || enr.courseId,
@@ -143,7 +164,7 @@ export default function Dashboard() {
         }
       })
       .catch((err) => console.warn("Could not fetch live enrollments:", err));
-  }, [currentUser]);
+  }, [currentUser, allCoursesList]);
 
   // Active courses enrolled: prioritize live Firestore enrollments, fall back to cached
   const enrolledCourses = liveEnrollments.length > 0 ? liveEnrollments : (userActivity?.enrolledCourses || []);
@@ -738,11 +759,11 @@ export default function Dashboard() {
         {/* ── TAB: BROWSE COURSES ─────────────────────────────────────── */}
         {activeNav === "browse-courses" && (() => {
           const enrolledIds = new Set(liveEnrollments.map(e => e.id));
-          const categories = ["All", ...Array.from(new Set(COURSES_CATALOG.map(c => c.category)))];
-          const filtered = COURSES_CATALOG.filter(c => {
+          const categories = ["All", ...Array.from(new Set(allCoursesList.map(c => c.category).filter(Boolean)))];
+          const filtered = allCoursesList.filter(c => {
             const matchCat = catalogFilter === "All" || c.category === catalogFilter;
             const q = catalogSearch.toLowerCase();
-            const matchQ = !q || c.title.toLowerCase().includes(q) || c.description.toLowerCase().includes(q) || c.badge.toLowerCase().includes(q);
+            const matchQ = !q || c.title?.toLowerCase().includes(q) || c.description?.toLowerCase().includes(q) || c.badge?.toLowerCase().includes(q);
             return matchCat && matchQ;
           });
 

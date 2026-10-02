@@ -3,7 +3,7 @@ import { useParams, useNavigate, useLocation, Link } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { COURSES_CATALOG } from "../data/courses";
 import { getCurriculumForCourse } from "../data/courseCurricula";
-import { collection, query, orderBy, getDocs, addDoc, serverTimestamp } from "firebase/firestore";
+import { collection, query, orderBy, getDocs, addDoc, serverTimestamp, doc, getDoc } from "firebase/firestore";
 import { db } from "../firebase";
 import {
   getCourseEnrollment,
@@ -17,14 +17,64 @@ import {
 } from "../contexts/userActivity";
 import { getResources, uploadResource } from "../contexts/resourcesService";
 
+function getYouTubeEmbedUrl(url) {
+  if (!url) return null;
+  const match = url.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=))([\w-]{11})/);
+  return match ? `https://www.youtube-nocookie.com/embed/${match[1]}?autoplay=1` : null;
+}
+
 export default function CoursePage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
   const { currentUser, userProfile } = useAuth();
 
-  const courseData = COURSES_CATALOG.find(c => c.id === id) || COURSES_CATALOG[0];
+  const [courseData, setCourseData] = useState(() => {
+    return COURSES_CATALOG.find(c => c.id === id) || {
+      id,
+      title: "Course Classroom",
+      category: "Tech & Digital Skills",
+      description: "Comprehensive skills training on Peleekings.",
+      duration: "6 weeks",
+      modulesCount: 4,
+      rating: 5.0,
+      badge: "Certificate",
+      image: "https://images.unsplash.com/photo-1516321318423-f06f85e504b3?w=600&auto=format&fit=crop&q=80",
+    };
+  });
   const courseCurriculum = getCurriculumForCourse(courseData.id);
+
+  // Load custom/updated course details from Firestore
+  useEffect(() => {
+    let isMounted = true;
+    async function fetchCourseDetails() {
+      const fromCatalog = COURSES_CATALOG.find(c => c.id === id);
+      if (fromCatalog && isMounted) {
+        setCourseData(fromCatalog);
+      }
+      try {
+        const snap = await getDoc(doc(db, "courses", id));
+        if (snap.exists() && isMounted) {
+          const data = snap.data();
+          setCourseData(prev => ({
+            ...prev,
+            ...data,
+            id: snap.id,
+            title: data.title || prev.title,
+            description: data.description || prev.description,
+            image: data.image || prev.image,
+            category: data.category || prev.category,
+            duration: data.duration || prev.duration,
+            badge: data.badge || prev.badge || "Certificate",
+          }));
+        }
+      } catch (err) {
+        console.warn("Notice: could not load course doc from Firestore:", err);
+      }
+    }
+    fetchCourseDetails();
+    return () => { isMounted = false; };
+  }, [id]);
 
   // Firestore-backed enrollment state (source of truth)
   const [enrollment, setEnrollment] = useState(null);
@@ -67,7 +117,9 @@ export default function CoursePage() {
   const [testScore, setTestScore] = useState(null);
 
   // Synchronize curriculum and lesson selection when the route's course ID changes
+  // Loads live teacher-uploaded modules and materials from Firestore
   useEffect(() => {
+    let isMounted = true;
     const curr = getCurriculumForCourse(courseData.id);
     const initialLessonId = curr.modules[0]?.lessons[0]?.id || "l1";
     setActiveLessonId(initialLessonId);
@@ -77,7 +129,95 @@ export default function CoursePage() {
     setTestAnswers({});
     setCurrentSubmission(null);
     setCurrentTestSubmission(null);
-  }, [courseData.id]);
+
+    async function loadDynamicCurriculum() {
+      try {
+        const modSnap = await getDocs(
+          query(collection(db, "courses", courseData.id, "modules"), orderBy("order", "asc"))
+        );
+
+        if (!modSnap.empty && isMounted) {
+          const [notesSnap, lessonsSnap, asgnSnap, testsSnap] = await Promise.allSettled([
+            getDocs(collection(db, "courses", courseData.id, "notes")),
+            getDocs(collection(db, "courses", courseData.id, "lessons")),
+            getDocs(collection(db, "courses", courseData.id, "assignments")),
+            getDocs(collection(db, "courses", courseData.id, "tests")),
+          ]);
+
+          const firestoreItems = [];
+          if (notesSnap.status === "fulfilled" && !notesSnap.value.empty) {
+            notesSnap.value.docs.forEach((d) => firestoreItems.push({ id: d.id, ...d.data(), type: "reading" }));
+          }
+          if (lessonsSnap.status === "fulfilled" && !lessonsSnap.value.empty) {
+            lessonsSnap.value.docs.forEach((d) => firestoreItems.push({ id: d.id, ...d.data(), type: "video" }));
+          }
+          if (asgnSnap.status === "fulfilled" && !asgnSnap.value.empty) {
+            asgnSnap.value.docs.forEach((d) => firestoreItems.push({ id: d.id, ...d.data(), type: "assignment" }));
+          }
+          if (testsSnap.status === "fulfilled" && !testsSnap.value.empty) {
+            testsSnap.value.docs.forEach((d) => firestoreItems.push({ id: d.id, ...d.data(), type: "test" }));
+          }
+
+          const dynamicModules = modSnap.docs.map((d) => {
+            const mData = d.data();
+            const modId = d.id;
+            const items = firestoreItems
+              .filter((item) => item.moduleId === modId)
+              .sort((a, b) => (a.order || 1) - (b.order || 1))
+              .map((item) => ({
+                id: item.id,
+                title: item.title,
+                duration: item.duration || (item.type === "video" ? "15 min" : item.type === "test" ? "20 min" : "10 min"),
+                completed: false,
+                type: item.type || "reading",
+                body: item.body || "",
+                instructions: item.instructions || "",
+                fileUrl: item.fileUrl || item.attachmentUrl || null,
+                videoUrl: item.videoUrl || null,
+                questions: item.questions || null,
+                dueAt: item.dueAt || null,
+              }));
+
+            return {
+              id: modId,
+              title: mData.title,
+              order: mData.order || 1,
+              lessons: items.length > 0 ? items : [
+                {
+                  id: `l_${modId}_intro`,
+                  title: `${mData.title} - Module Overview`,
+                  duration: "10 min",
+                  completed: false,
+                  type: "reading",
+                  body: "Welcome to this module. Course material, presentations, and assessments uploaded by your instructor will appear here."
+                }
+              ]
+            };
+          });
+
+          if (dynamicModules.length > 0 && isMounted) {
+            if (curr.modules.length === 0 || courseData.tutorId) {
+              setModules(dynamicModules);
+              if (dynamicModules[0]?.lessons[0]?.id) {
+                setActiveLessonId(dynamicModules[0].lessons[0].id);
+              }
+            } else {
+              const existingIds = new Set(curr.modules.map((m) => m.id));
+              const extraModules = dynamicModules.filter((m) => !existingIds.has(m.id));
+              if (extraModules.length > 0) {
+                setModules([...curr.modules, ...extraModules]);
+              }
+            }
+          }
+        }
+      } catch (err) {
+        console.warn("Notice: could not load dynamic curriculum from Firestore:", err);
+      }
+    }
+
+    loadDynamicCurriculum();
+    return () => { isMounted = false; };
+  }, [courseData.id, courseData.tutorId]);
 
   useEffect(() => {
     async function loadAnnouncements() {
@@ -408,7 +548,9 @@ export default function CoursePage() {
     }
   }
 
-  const TEST_QUESTIONS = courseCurriculum.quizQuestions || [];
+  const TEST_QUESTIONS = (currentLesson?.questions && currentLesson.questions.length > 0)
+    ? currentLesson.questions
+    : (courseCurriculum.quizQuestions || []);
 
   async function handleTestSubmit(e) {
     if (e) e.preventDefault();
@@ -673,72 +815,93 @@ export default function CoursePage() {
             ) : (
               <>
                 {/* Video Player Frame */}
-                <div className="video-frame-container" id="classroom-video-player">
-                  <img
-                    src="https://images.unsplash.com/photo-1531482615713-2afd69097998?w=1200&auto=format&fit=crop&q=80"
-                    alt="Lesson Video Preview"
-                    style={{ width: "100%", height: "100%", objectFit: "cover", opacity: 0.85 }}
-                  />
+                <div className="video-frame-container" id="classroom-video-player" style={{ position: "relative", minHeight: 380, background: "#000" }}>
+                  {isPlaying && currentLesson.videoUrl ? (
+                    getYouTubeEmbedUrl(currentLesson.videoUrl) ? (
+                      <iframe
+                        src={getYouTubeEmbedUrl(currentLesson.videoUrl)}
+                        style={{ width: "100%", height: "100%", minHeight: 380, border: "none" }}
+                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                        allowFullScreen
+                        title={currentLesson.title}
+                      />
+                    ) : (
+                      <video
+                        controls
+                        autoPlay
+                        src={currentLesson.videoUrl}
+                        style={{ width: "100%", height: "100%", minHeight: 380, objectFit: "contain", background: "#000" }}
+                      />
+                    )
+                  ) : (
+                    <>
+                      <img
+                        src="https://images.unsplash.com/photo-1531482615713-2afd69097998?w=1200&auto=format&fit=crop&q=80"
+                        alt="Lesson Video Preview"
+                        style={{ width: "100%", height: "100%", objectFit: "cover", opacity: 0.85 }}
+                      />
 
-                  <div className="video-mockup-overlay">
-                    {/* Top Overlay */}
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                      <div className="pill-badge" style={{ background: "rgba(0,0,0,0.6)", color: "#FFFFFF", backdropFilter: "blur(4px)" }}>
-                        {courseData.badge} &bull; {currentLesson.title}
-                      </div>
-                      <div style={{ fontSize: "0.85rem", opacity: 0.9 }}>HD 1080p</div>
-                    </div>
+                      <div className="video-mockup-overlay">
+                        {/* Top Overlay */}
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                          <div className="pill-badge" style={{ background: "rgba(0,0,0,0.6)", color: "#FFFFFF", backdropFilter: "blur(4px)" }}>
+                            {courseData.badge} &bull; {currentLesson.title}
+                          </div>
+                          <div style={{ fontSize: "0.85rem", opacity: 0.9 }}>HD 1080p</div>
+                        </div>
 
-                    {/* Big Center Play Button */}
-                    <div style={{ alignSelf: "center", cursor: "pointer" }} onClick={() => setIsPlaying(!isPlaying)}>
-                      <div
-                        style={{
-                          width: 68,
-                          height: 68,
-                          borderRadius: "50%",
-                          background: "rgba(17, 24, 39, 0.85)",
-                          border: "2px solid rgba(255,255,255,0.7)",
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          fontSize: "1.6rem",
-                          color: "#FFFFFF",
-                          boxShadow: "0 8px 30px rgba(0,0,0,0.5)",
-                          transition: "transform 0.2s ease"
-                        }}
-                      >
-                        {isPlaying ? "❚❚" : "▶"}
-                      </div>
-                    </div>
+                        {/* Big Center Play Button */}
+                        <div style={{ alignSelf: "center", cursor: "pointer" }} onClick={() => setIsPlaying(true)}>
+                          <div
+                            style={{
+                              width: 68,
+                              height: 68,
+                              borderRadius: "50%",
+                              background: "rgba(17, 24, 39, 0.85)",
+                              border: "2px solid rgba(255,255,255,0.7)",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              fontSize: "1.6rem",
+                              color: "#FFFFFF",
+                              boxShadow: "0 8px 30px rgba(0,0,0,0.5)",
+                              transition: "transform 0.2s ease"
+                            }}
+                          >
+                            ▶
+                          </div>
+                        </div>
 
-                    {/* Bottom Controls Bar */}
-                    <div className="video-controls-bar">
-                      <span style={{ cursor: "pointer" }} onClick={() => setIsPlaying(!isPlaying)}>
-                        {isPlaying ? "❚❚" : "▶"}
-                      </span>
-                      <div style={{ flex: 1, height: 5, background: "rgba(255,255,255,0.3)", borderRadius: 99, position: "relative" }}>
-                        <div style={{ width: isPlaying ? "72%" : "52%", height: "100%", background: "var(--primary-learner)", borderRadius: 99, transition: "width 0.3s" }} />
+                        {/* Bottom Controls Bar */}
+                        <div className="video-controls-bar">
+                          <span style={{ cursor: "pointer" }} onClick={() => setIsPlaying(true)}>
+                            ▶
+                          </span>
+                          <div style={{ flex: 1, height: 5, background: "rgba(255,255,255,0.3)", borderRadius: 99, position: "relative" }}>
+                            <div style={{ width: "52%", height: "100%", background: "var(--primary-learner)", borderRadius: 99, transition: "width 0.3s" }} />
+                          </div>
+                          <span>{currentLesson.duration || "15 min"}</span>
+                          <span style={{ cursor: "pointer" }} onClick={() => setIsMuted(m => !m)} title={isMuted ? "Unmute" : "Mute"}>
+                            {isMuted ? "🔇" : "🔊"}
+                          </span>
+                          <span style={{ cursor: "pointer" }} title="Settings">&#x2699;</span>
+                          <span
+                            style={{ cursor: "pointer" }}
+                            title="Toggle Fullscreen"
+                            onClick={() => {
+                              const el = document.getElementById("classroom-video-player");
+                              if (el) {
+                                if (!document.fullscreenElement) el.requestFullscreen().catch(() => {});
+                                else document.exitFullscreen().catch(() => {});
+                              }
+                            }}
+                          >
+                            &#x26F6;
+                          </span>
+                        </div>
                       </div>
-                      <span>12:24 / 23:10</span>
-                      <span style={{ cursor: "pointer" }} onClick={() => setIsMuted(m => !m)} title={isMuted ? "Unmute" : "Mute"}>
-                        {isMuted ? "🔇" : "🔊"}
-                      </span>
-                      <span style={{ cursor: "pointer" }} title="Settings">&#x2699;</span>
-                      <span
-                        style={{ cursor: "pointer" }}
-                        title="Toggle Fullscreen"
-                        onClick={() => {
-                          const el = document.getElementById("classroom-video-player");
-                          if (el) {
-                            if (!document.fullscreenElement) el.requestFullscreen().catch(() => {});
-                            else document.exitFullscreen().catch(() => {});
-                          }
-                        }}
-                      >
-                        &#x26F6;
-                      </span>
-                    </div>
-                  </div>
+                    </>
+                  )}
                 </div>
 
                 {/* Lesson Title & Module Info */}
@@ -813,11 +976,24 @@ export default function CoursePage() {
                       {currentLesson.type === "assignment" && (
                         <div style={{ background: "#F8FAFC", border: "1px solid var(--border-light)", borderRadius: "var(--radius-md)", padding: 24, marginTop: 24 }}>
                           <h4 style={{ fontSize: "1.05rem", fontWeight: 700, marginBottom: 8 }}>
-                            {courseCurriculum.assignment?.title || "📝 Practical Assignment"}
+                            {currentLesson.title || courseCurriculum.assignment?.title || "📝 Practical Assignment"}
                           </h4>
                           <p style={{ fontSize: "0.875rem", color: "var(--text-secondary)", marginBottom: 16 }}>
-                            {courseCurriculum.assignment?.description || "Submit your practical deliverables below for instructor review."}
+                            {currentLesson.instructions || courseCurriculum.assignment?.description || "Submit your practical deliverables below for instructor review."}
                           </p>
+                          {currentLesson.fileUrl && (
+                            <div style={{ marginBottom: 16 }}>
+                              <a
+                                href={currentLesson.fileUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="btn btn-outline btn-sm"
+                                style={{ textDecoration: "none" }}
+                              >
+                                Download Assignment Brief / Starter Kit &darr;
+                              </a>
+                            </div>
+                          )}
 
                           {currentSubmission ? (
                             <div style={{ background: "#FFFFFF", border: "1px solid var(--border-light)", borderRadius: "var(--radius-sm)", padding: 16 }}>
@@ -981,13 +1157,27 @@ export default function CoursePage() {
 
                   {activeTab === "Notes" && (
                     <div style={{ background: "#FFFFFF", border: "1px solid var(--border-light)", borderRadius: "var(--radius-md)", padding: 20 }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, flexWrap: "wrap", gap: 10 }}>
                         <div style={{ fontWeight: 700, color: "var(--text-primary)" }}>Course Notes: {currentLesson.title}</div>
-                        <button className="btn btn-outline btn-sm" onClick={() => triggerDownload(courseCurriculum.notesFileName)}>
-                          Download PDF &darr;
-                        </button>
+                        {currentLesson.fileUrl ? (
+                          <a
+                            href={currentLesson.fileUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="btn btn-outline btn-sm"
+                            style={{ textDecoration: "none" }}
+                          >
+                            Download Material &darr;
+                          </a>
+                        ) : (
+                          <button className="btn btn-outline btn-sm" onClick={() => triggerDownload(courseCurriculum.notesFileName)}>
+                            Download PDF &darr;
+                          </button>
+                        )}
                       </div>
-                      <p>Comprehensive lecture notes summarizing the concepts covered in this module for {courseData.title}, including cheatsheets, reference architectures, and industry best practices.</p>
+                      <div style={{ whiteSpace: "pre-line", lineHeight: 1.7, color: "var(--text-secondary)" }}>
+                        {currentLesson.body || `Comprehensive lecture notes summarizing the concepts covered in this module for ${courseData.title}, including cheatsheets, reference architectures, and industry best practices.`}
+                      </div>
                     </div>
                   )}
 
